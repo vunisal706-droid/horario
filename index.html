@@ -248,6 +248,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
     <div class="card">
       <div class="tt-toolbar">
         <button class="btn btn-primary" id="btnGenerar">⚙ Generar horarios</button>
+        <button class="btn" id="btnIA">🤖 Generar con IA (Claude)</button>
         <div class="inline" id="viewSwitch" style="display:none">
           <label style="margin:0">Ver:</label>
           <select id="viewMode" style="width:auto">
@@ -272,6 +273,20 @@ tbody tr:nth-child(even){background:#fcfcfd}
 </main>
 
 <div id="toasts"></div>
+
+<!-- Modal IA -->
+<div class="overlay" id="iaOverlay">
+  <div class="modal" role="dialog" aria-modal="true" style="max-width:700px">
+    <h3>🤖 Generar horarios con Claude</h3>
+    <p class="small muted" style="margin-bottom:10px">Hemos copiado al portapapeles un prompt con toda tu configuración (jornada, materias, claustro, asignaciones y banda de religión). Pégalo en Claude (Ctrl/Cmd + V) y te devolverá un <strong>documento Word</strong> con los horarios por grupo y por maestro. Si no se copió solo, usa el botón “Copiar”.</p>
+    <textarea id="iaPrompt" readonly style="width:100%;height:280px;font-family:ui-monospace,monospace;font-size:12px;line-height:1.45;padding:10px;border:1px solid var(--color-border);border-radius:10px;background:#fbfbfd;color:#1f2937"></textarea>
+    <div class="inline" style="justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-ghost" id="iaClose">Cerrar</button>
+      <button class="btn" id="iaCopy">Copiar de nuevo</button>
+      <button class="btn btn-primary" id="iaOpen">Abrir Claude ↗</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal maestro -->
 <div class="overlay" id="mOverlay">
@@ -1029,6 +1044,91 @@ function skeletonGrid(){
 /* =========================================================================
    GUARDAR / CARGAR / EJEMPLO
    ========================================================================= */
+/* =========================================================================
+   GENERAR CON IA (prompt para Claude → documento Word)
+   ========================================================================= */
+function buildPromptIA(){
+  const c=state.centro; const L=[];
+  L.push('Actúa como experto en organización escolar de un centro de Infantil y Primaria en Andalucía (LOMLOE). Cuadra los horarios semanales SIN solapamientos y entrégalos en un DOCUMENTO WORD (.docx) descargable.');
+  L.push('');
+  L.push('=== CENTRO Y JORNADA ===');
+  L.push('Centro: '+(c.nombre||'(sin nombre)'));
+  L.push('Días lectivos: Lunes a Viernes (mismo horario todos los días).');
+  L.push('Franjas horarias diarias:');
+  tramoTimes().forEach(t=>{ L.push(t.recreo ? '  · RECREO '+t.ini+'–'+t.fin : '  · '+t.ini+'–'+t.fin+' ('+t.dur+' min)'); });
+  L.push('Sesiones lectivas por día: '+numTramos()+' ('+slotsSemana()+' por grupo a la semana).');
+  L.push('');
+  L.push('=== GRUPOS (1 línea) ===');
+  L.push(GRUPOS.map(g=>g.nombre).join(', ')+'.');
+  L.push('');
+  L.push('=== SESIONES SEMANALES POR MATERIA Y GRUPO ===');
+  GRUPOS.forEach(g=>{
+    const items=materiasDeEtapa(g.etapa).filter(m=>(state.horas[g.id]?.[m.id]||0)>0).map(m=>MAT[m.id].full+' ('+state.horas[g.id][m.id]+')');
+    L.push('• '+g.nombre+': '+items.join(' · '));
+  });
+  L.push('');
+  L.push('=== CLAUSTRO Y DISPONIBILIDAD ===');
+  state.maestros.forEach(m=>{
+    let disp;
+    if(!m.dias && !m.tramos) disp='disponible todos los días, jornada completa';
+    else{
+      const d=m.dias?m.dias.map(x=>DIAS_LARGO[x]).join(', '):'todos los días';
+      const tr=(m.tramos&&m.tramos.length)?'; solo tramos '+m.tramos.map(x=>(x+1)+'ª').join(', '):'';
+      disp='solo '+d+tr;
+    }
+    L.push('• '+m.nombre+' ('+m.rol+') — '+disp+'.');
+  });
+  L.push('');
+  L.push('=== QUIÉN IMPARTE CADA MATERIA EN CADA GRUPO ===');
+  GRUPOS.forEach(g=>{
+    const items=materiasDeEtapa(g.etapa).filter(m=>m.rol!=='religion'&&(state.horas[g.id]?.[m.id]||0)>0).map(m=>MAT[m.id].nombre+' → '+maestroNombre(state.asig[g.id]?.[m.id]));
+    L.push('• '+g.nombre+' (tutor/a: '+maestroNombre(state.tutores[g.id])+'): '+items.join(' · '));
+  });
+  L.push('');
+  L.push('=== RELIGIÓN (BANDA PARALELA) ===');
+  L.push('Cada grupo tiene su sesión de Religión en UNA ÚNICA franja semanal en la que conviven en paralelo las opciones, cada una con su maestro/a:');
+  GRUPOS.forEach(g=>{
+    if((state.horas[g.id]?.REL||0)<=0)return;
+    const r=state.religion[g.id]||{};
+    L.push('• '+g.nombre+' → Católica: '+(r.cat?maestroNombre(r.cat):'—')+' | Evangélica: '+(r.ev?maestroNombre(r.ev):'no aplica')+' | Atención Educativa: '+(r.ae?maestroNombre(r.ae):'—'));
+  });
+  L.push('');
+  L.push('=== REGLAS DE CUADRE (OBLIGATORIAS) ===');
+  L.push('1) Un mismo maestro/a NO puede estar en dos grupos a la vez (tampoco en la banda de religión).');
+  L.push('2) Cada grupo tiene una sola materia por franja; rellena TODAS las franjas lectivas.');
+  L.push('3) Respeta la disponibilidad (días y tramos) de cada maestro/a.');
+  L.push('4) La banda de religión de cada grupo ocupa una sola franja; en ella Católica, Evangélica (si aplica) y Atención Educativa son simultáneas.');
+  L.push('5) La Religión Evangélica solo se imparte los MARTES y solo en 4º, 5º y 6º: la banda de religión de esos tres grupos debe caer en martes, cada una en una franja distinta (no puede desdoblarse la evangélica).');
+  L.push('6) Conocimiento del Medio es bilingüe; respétalo con la maestra indicada para cada tramo.');
+  L.push('');
+  L.push('=== PREFERENCIAS (en la medida de lo posible) ===');
+  L.push('- Lengua a primeras horas como norma general.');
+  L.push('- Matemáticas a continuación, pronto por la mañana.');
+  L.push('- Evita repetir la misma materia dos veces el mismo día en un grupo salvo que sea inevitable.');
+  L.push('');
+  L.push('=== ENTREGABLE (DOCUMENTO WORD .docx) ===');
+  L.push('Genera un documento Word descargable, con el nombre del centro en la cabecera, que contenga:');
+  L.push('1) HORARIOS POR GRUPO: una tabla por cada uno de los '+GRUPOS.length+' grupos (filas = franjas horarias con sus horas y el recreo; columnas = Lunes a Viernes; cada celda con la materia y el/la maestro/a).');
+  L.push('2) HORARIOS POR MAESTRO/A: una tabla por cada maestro/a (su semana completa; cada celda con el grupo y la materia; franjas libres en blanco).');
+  L.push('Antes de entregar, verifica que NO haya ningún solapamiento y que se cumplan todas las reglas. Si algo no cuadra, explícalo al final.');
+  return L.join('\n');
+}
+function copiarTexto(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text).then(()=>true).catch(()=>fallbackCopy());
+  }
+  return Promise.resolve(fallbackCopy());
+  function fallbackCopy(){ try{ const ta=document.getElementById('iaPrompt'); ta.removeAttribute('readonly'); ta.focus(); ta.select(); const ok=document.execCommand('copy'); ta.setAttribute('readonly','readonly'); return ok; }catch(e){ return false; } }
+}
+function abrirIA(){
+  if(state.maestros.length===0){ toast('Añade el claustro y la asignación antes de generar el prompt','warn'); go('maestros'); return; }
+  const p=buildPromptIA();
+  document.getElementById('iaPrompt').value=p;
+  document.getElementById('iaOverlay').classList.add('show');
+  copiarTexto(p).then(ok=>toast(ok?'Prompt copiado. Pégalo en Claude con Ctrl/Cmd + V.':'Ábrelo y cópialo con el botón “Copiar de nuevo”.', ok?'success':'warn'));
+  window.open('https://claude.ai/new','_blank');
+}
+
 function guardar(){
   const blob=new Blob([JSON.stringify({v:1,state},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
@@ -1100,7 +1200,12 @@ function init(){
   document.getElementById('btnLoad').onclick=()=>document.getElementById('fileInput').click();
   document.getElementById('fileInput').onchange=e=>{if(e.target.files[0])cargar(e.target.files[0]);e.target.value='';};
   document.getElementById('btnEjemplo').onclick=cargarEjemplo;
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+  document.getElementById('btnIA').onclick=abrirIA;
+  document.getElementById('iaClose').onclick=()=>document.getElementById('iaOverlay').classList.remove('show');
+  document.getElementById('iaCopy').onclick=()=>copiarTexto(document.getElementById('iaPrompt').value).then(ok=>toast(ok?'Copiado':'No se pudo copiar','info'));
+  document.getElementById('iaOpen').onclick=()=>window.open('https://claude.ai/new','_blank');
+  document.getElementById('iaOverlay').onclick=e=>{if(e.target.id==='iaOverlay')e.currentTarget.classList.remove('show');};
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();document.getElementById('iaOverlay').classList.remove('show');}});
   go('centro');
 }
 init();
