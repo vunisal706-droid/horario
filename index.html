@@ -90,6 +90,7 @@ th{background:#fbfbfd;font-weight:700;color:#374151;position:sticky;top:0}
 tbody tr:nth-child(even){background:#fcfcfd}
 .hours-input{width:54px;text-align:center;padding:5px}
 .total-ok{color:var(--color-success);font-weight:700}
+.total-warn{color:var(--color-warning);font-weight:700}
 .total-bad{color:var(--color-error);font-weight:700}
 
 /* chips */
@@ -214,7 +215,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
   <section class="panel" data-panel="materias">
     <div class="card">
       <h2>2 · Reparto de horas por materia</h2>
-      <p class="sub">Sesiones semanales de cada materia por curso. Precargado con el Anexo II (Primaria). Edítalo libremente. La <strong>Autonomía del centro</strong> son sesiones a tu criterio (refuerzo, ampliar troncales…). El total de cada curso debe coincidir con las sesiones de la semana.</p>
+      <p class="sub">Sesiones semanales de cada materia por curso. Edítalo libremente. La <strong>Autonomía del centro</strong> son sesiones a tu criterio (refuerzo, ampliar troncales…). No hace falta llegar al máximo de la semana: si pones menos, esas franjas quedarán <strong>libres</strong> en el horario (recreo, coordinaciones, reducciones…). Solo se marca en rojo si te <strong>pasas</strong> del máximo, porque entonces no caben.</p>
       <div class="tbl-wrap"><table id="horasTable"></table></div>
     </div>
   </section>
@@ -233,6 +234,11 @@ tbody tr:nth-child(even){background:#fcfcfd}
 
   <!-- 4. ASIGNACIÓN -->
   <section class="panel" data-panel="asignacion">
+    <div class="card">
+      <h2>Especialistas del centro</h2>
+      <p class="sub">Asigna una vez al especialista de cada área y se rellena en todos los grupos. Inglés, EF y Música suelen ser la misma persona para todo el colegio; Francés solo aplica a los cursos que lo tengan (por defecto 5º y 6º).</p>
+      <div id="especialistasBox" class="grid2"></div>
+    </div>
     <div class="card">
       <h2>4 · Asignación por grupo</h2>
       <p class="sub">Para cada grupo: elige tutor/a y quién imparte cada materia. Las áreas del tutor se autocompletan; los especialistas los eliges tú. Conocimiento del Medio (bilingüe) y Música los asignas a su maestro/a aunque no sean la tutora.</p>
@@ -368,24 +374,24 @@ const GRP = Object.fromEntries(GRUPOS.map(g=>[g.id,g]));
 
 // Reparto para jornada de 45' (6 sesiones/día · 30/semana) — Anexo II
 const HORAS_45 = {
-  '1':{LEN:6,MAT:6,CMED:4,ING:2,EF:2,FRA:1,ART:1,MUS:1,AUT:6,REL:1},
-  '2':{LEN:6,MAT:6,CMED:4,ING:2,EF:2,FRA:1,ART:1,MUS:1,AUT:6,REL:1},
-  '3':{LEN:6,MAT:5,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,AUT:5,REL:1},
-  '4':{LEN:6,MAT:5,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,AUT:5,REL:1},
-  '5':{LEN:5,MAT:5,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,LCA:2,AUT:4,REL:1},
-  '6':{LEN:5,MAT:5,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,LCA:2,AUT:4,REL:1},
+  '1':{LEN:6,MAT:6,CMED:4,ING:2,EF:2,ART:1,MUS:1,AUT:7,REL:1},
+  '2':{LEN:6,MAT:6,CMED:4,ING:2,EF:2,ART:1,MUS:1,AUT:7,REL:1},
+  '3':{LEN:6,MAT:5,CMED:4,ING:3,EF:2,ART:1,MUS:1,AUT:7,REL:1},
+  '4':{LEN:6,MAT:5,CMED:4,ING:3,EF:2,ART:1,MUS:1,AUT:7,REL:1},
+  '5':{LEN:5,MAT:5,CMED:4,ING:3,EF:2,FRA:1,ART:1,MUS:1,LCA:2,AUT:5,REL:1},
+  '6':{LEN:5,MAT:5,CMED:4,ING:3,EF:2,FRA:1,ART:1,MUS:1,LCA:2,AUT:5,REL:1},
   'INF3':{GLO:26,PSI:2,ING:1,REL:1},
   'INF4':{GLO:26,PSI:2,ING:1,REL:1},
   'INF5':{GLO:26,PSI:2,ING:1,REL:1},
 };
 // Reparto orientativo para jornada de 60' (5 sesiones/día · 25/semana, última de 30')
 const HORAS_60 = {
-  '1':{LEN:5,MAT:5,CMED:4,ING:2,EF:2,FRA:1,ART:1,MUS:1,AUT:3,REL:1},
-  '2':{LEN:5,MAT:5,CMED:4,ING:2,EF:2,FRA:1,ART:1,MUS:1,AUT:3,REL:1},
-  '3':{LEN:5,MAT:4,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,AUT:2,REL:1},
-  '4':{LEN:5,MAT:4,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,AUT:2,REL:1},
-  '5':{LEN:4,MAT:4,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,LCA:2,AUT:1,REL:1},
-  '6':{LEN:4,MAT:4,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,LCA:2,AUT:1,REL:1},
+  '1':{LEN:5,MAT:5,CMED:4,ING:2,EF:2,ART:1,MUS:1,AUT:4,REL:1},
+  '2':{LEN:5,MAT:5,CMED:4,ING:2,EF:2,ART:1,MUS:1,AUT:4,REL:1},
+  '3':{LEN:5,MAT:4,CMED:4,ING:3,EF:2,ART:1,MUS:1,AUT:4,REL:1},
+  '4':{LEN:5,MAT:4,CMED:4,ING:3,EF:2,ART:1,MUS:1,AUT:4,REL:1},
+  '5':{LEN:4,MAT:4,CMED:4,ING:3,EF:2,FRA:1,ART:1,MUS:1,LCA:2,AUT:2,REL:1},
+  '6':{LEN:4,MAT:4,CMED:4,ING:3,EF:2,FRA:1,ART:1,MUS:1,LCA:2,AUT:2,REL:1},
   'INF3':{GLO:21,PSI:2,ING:1,REL:1},
   'INF4':{GLO:21,PSI:2,ING:1,REL:1},
   'INF5':{GLO:21,PSI:2,ING:1,REL:1},
@@ -409,6 +415,7 @@ function freshState(){
     tutores: {},         // grupoId -> maestroId
     asig: {},            // grupoId -> {materiaId -> maestroId}
     religion: {},        // grupoId -> {cat,ev,ae}
+    especialistas: {ING:'',EF:'',MUS:'',FRA:'',CMED13:'',CMED46:''}, // mismo maestro para todo el centro
     resultado: null,     // grupoId -> [dia][slot] = {mat,prof,band:{cat,ev,ae}}|null
   };
 }
@@ -588,8 +595,9 @@ function updTotales(){
     const c=document.getElementById('tot-'+g.id); if(!c)return;
     const t=totalGrupo(g.id);
     c.textContent=t;
-    c.className=(t===need)?'total-ok':'total-bad';
-    c.title=(t===need)?'Cuadra':'Debe ser '+need;
+    if(t===need){ c.className='total-ok'; c.title='Cuadra ('+need+')'; }
+    else if(t>need){ c.className='total-bad'; c.title='Se pasa: sobran '+(t-need)+' (máx. '+need+')'; }
+    else { c.className='total-warn'; c.title='Quedarán '+(need-t)+' sesiones libres'; }
   });
 }
 
@@ -668,6 +676,28 @@ function profOptions(selected){
   state.maestros.forEach(m=>o+=`<option value="${m.id}"${m.id===selected?' selected':''}>${m.nombre} · ${m.rol}</option>`);
   return o;
 }
+function renderEspecialistas(){
+  const box=document.getElementById('especialistasBox'); if(!box)return;
+  if(!state.especialistas)state.especialistas={};
+  const defs=[['ING','Inglés (todo el centro)'],['EF','Educación Física'],['MUS','Música'],['FRA','Francés (5º·6º)'],['CMED13','Conoc. Medio 1º-3º'],['CMED46','Conoc. Medio 4º-6º']];
+  box.innerHTML=defs.map(([k,label])=>`<div class="field" style="margin:0"><label>${label}</label><select data-esp="${k}">${profOptions(state.especialistas[k])}</select></div>`).join('');
+  box.querySelectorAll('[data-esp]').forEach(s=>s.onchange=()=>{
+    const k=s.dataset.esp; if(!state.especialistas)state.especialistas={}; state.especialistas[k]=s.value;
+    aplicarEspecialista(k,s.value); renderAsig();
+  });
+}
+function aplicarEspecialista(k,mid){
+  if(!mid) return;
+  const mat = (k==='CMED13'||k==='CMED46')?'CMED':k;
+  const grupos = k==='CMED13'?['1','2','3'] : k==='CMED46'?['4','5','6'] : GRUPOS.map(g=>g.id);
+  grupos.forEach(g=>{ if((state.horas[g]?.[mat]||0)>0){ if(!state.asig[g])state.asig[g]={}; state.asig[g][mat]=mid; } });
+}
+function autodetectEspecialistas(){
+  if(!state.especialistas)state.especialistas={ING:'',EF:'',MUS:'',FRA:'',CMED13:'',CMED46:''};
+  const uno=r=>{const a=state.maestros.filter(m=>m.rol===r);return a.length===1?a[0].id:'';};
+  const pairs=[['ING','Inglés'],['EF','Educación Física'],['MUS','Música'],['FRA','Francés']];
+  pairs.forEach(([k,rol])=>{ const id=uno(rol); if(id && !state.especialistas[k]){ state.especialistas[k]=id; aplicarEspecialista(k,id); } });
+}
 function renderCarga(){
   const box=document.getElementById('cargaResumen'); if(!box)return;
   if(state.maestros.length===0){box.innerHTML='';return;}
@@ -692,6 +722,7 @@ function renderCarga(){
     (exceso?`<div class="notice warn" style="margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Hay maestros/as con más horas de las que caben en la semana. Reparte alguna materia a otra persona (p. ej. apoyo) o el cuadre fallará.</div>`:'')+`</div>`;
 }
 function renderAsig(){
+  renderEspecialistas();
   const box=document.getElementById('asigList');
   if(state.maestros.length===0){box.innerHTML='<div class="notice warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Primero añade maestros en el paso 3.</div>';return;}
   let html='';
@@ -851,7 +882,7 @@ function generar(){
 }
 function validar(){
   const p=[]; const need=slotsSemana();
-  GRUPOS.forEach(g=>{ if(totalGrupo(g.id)!==need) p.push(`${g.nombre}: las horas suman ${totalGrupo(g.id)}, deben sumar ${need}.`); });
+  GRUPOS.forEach(g=>{ const t=totalGrupo(g.id); if(t>need) p.push(`${g.nombre}: las horas suman ${t} y no caben en ${need} sesiones. Quita ${t-need}.`); });
   GRUPOS.forEach(g=>{
     const mats=materiasDeEtapa(g.etapa).filter(m=>m.rol!=='religion'&&(state.horas[g.id]?.[m.id]||0)>0);
     mats.forEach(m=>{ if(!state.asig[g.id]?.[m.id]) p.push(`${g.nombre}: falta asignar maestro a ${m.nombre}.`); });
@@ -885,8 +916,11 @@ function runEngine(btn){
   // volcar a state.resultado
   state.resultado={};
   GRUPOS.forEach(g=>state.resultado[g.id]=es.grid[g.id]);
+  let libres=0; const NS=numTramos();
+  GRUPOS.forEach(g=>{for(let d=0;d<DIAS.length;d++)for(let s=0;s<NS;s++)if(!es.grid[g.id][d][s])libres++;});
+  const notaLibres = libres>0 ? ` Quedan ${libres} celdas <strong>libres</strong> (sin docencia asignada) para coordinaciones, refuerzos o lo que decida el/la tutor/a.` : '';
   document.getElementById('genStatus').innerHTML=
-    `<div class="notice ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Horarios generados sin solapamientos en ${ms} ms (${attempts} ${attempts===1?'intento':'intentos'}). Puedes ajustarlos a mano pulsando dos celdas para intercambiarlas.</div>`;
+    `<div class="notice ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Horarios generados sin solapamientos en ${ms} ms (${attempts} ${attempts===1?'intento':'intentos'}).${notaLibres} Puedes ajustarlos a mano pulsando dos celdas para intercambiarlas.</div>`;
   setupResultsView();
 }
 function buildTasks(){
@@ -923,6 +957,16 @@ function buildTasks(){
    RESULTADOS · render, edición e impresión
    ========================================================================= */
 let selCell=null;
+function maestroDaClase(m){
+  const mid=m.id||m;
+  for(const g of GRUPOS){
+    const a=state.asig[g.id]||{};
+    for(const k in a){ if(a[k]===mid && (state.horas[g.id]?.[k]||0)>0) return true; }
+    const r=state.religion[g.id]||{};
+    if((state.horas[g.id]?.REL||0)>0 && (r.cat===mid||r.ev===mid||r.ae===mid)) return true;
+  }
+  return false;
+}
 function setupResultsView(){
   document.getElementById('viewSwitch').style.display='flex';
   const mode=document.getElementById('viewMode');
@@ -931,7 +975,7 @@ function setupResultsView(){
     if(mode.value==='grupo'){
       target.innerHTML=GRUPOS.map(g=>`<option value="${g.id}">${g.nombre}</option>`).join('');
     }else{
-      target.innerHTML=state.maestros.map(m=>`<option value="${m.id}">${m.nombre} · ${m.rol}</option>`).join('');
+      target.innerHTML=state.maestros.filter(maestroDaClase).map(m=>`<option value="${m.id}">${m.nombre} · ${m.rol}</option>`).join('');
     }
     drawCurrent();
   }
@@ -953,7 +997,7 @@ function tramoLabelRows(){
     : {type:'slot', i:t.i, ini:t.ini, fin:t.fin, dur:t.dur});
 }
 function cellHTML(cell,gid,d,s,editable){
-  if(!cell) return `<td class="cell empty" ${editable?`data-c="${gid}|${d}|${s}"`:''}>·</td>`;
+  if(!cell) return `<td class="cell empty" ${editable?`data-c="${gid}|${d}|${s}"`:''}>libre</td>`;
   const m=MAT[cell.mat];
   const bg=m?m.color:'#888';
   let prof=maestroNombre(cell.prof);
@@ -1073,7 +1117,7 @@ function printAll(){
   const area=document.getElementById('printArea');
   let html='';
   GRUPOS.forEach(g=>{ html+=gridGrupo(g.id,false); });
-  state.maestros.forEach(m=>{ html+=gridMaestro(m.id); });
+  state.maestros.filter(maestroDaClase).forEach(m=>{ html+=gridMaestro(m.id); });
   area.innerHTML=html; area.style.display='block';
   window.print();
   setTimeout(()=>{area.style.display='none';area.innerHTML='';},500);
@@ -1219,6 +1263,7 @@ function cargarEjemplo(){
     const upper=['4','5','6'].includes(g.id);
     state.religion[g.id]={cat,ev:upper?ev:'',ae:state.tutores[g.id]};
   });
+  state.especialistas={ING:ing,EF:ef,MUS:mus,FRA:fra,CMED13:t3,CMED46:t4};
   fillCentro(); renderMaestros(); renderAsig(); renderRel();
   go('horarios');
   document.getElementById('viewSwitch').style.display='none';
@@ -1331,6 +1376,7 @@ function importarPersonal(reemplazar){
     state.maestros.push({id:nid(), nombre, rol:p.rol, dias, tramos:null});
   });
   document.getElementById('impOverlay').classList.remove('show');
+  autodetectEspecialistas();
   go('maestros'); renderMaestros();
   toast(elegidos.length+' maestros/as importados/as');
 }
