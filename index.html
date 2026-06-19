@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#dc2626">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="description" content="Generador de horarios para centros de Infantil y Primaria (Andalucía)">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Cuadra Horarios — CEIP</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --color-primary:#dc2626; --color-primary-light:#fee2e2; --color-primary-dark:#b91c1c;
+  --color-secondary:#f59e0b;
+  --color-bg:#f7f8fa; --color-surface:#ffffff; --color-border:#e6e8ee;
+  --color-text:#1c1917; --color-text-muted:#6b7280;
+  --color-success:#16a34a; --color-success-bg:#dcfce7;
+  --color-error:#dc2626; --color-error-bg:#fee2e2;
+  --color-warning:#d97706; --color-warning-bg:#fef3c7;
+  --color-info:#0891b2; --color-info-bg:#e0f2fe;
+  --radius-sm:6px; --radius-md:10px; --radius-lg:16px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.08);
+  --shadow-md:0 4px 12px rgba(0,0,0,.10);
+  --shadow-card:0 2px 8px rgba(0,0,0,.07), 0 0 0 1px rgba(0,0,0,.03);
+  --space-2:8px; --space-3:12px; --space-4:16px; --space-6:24px;
+  font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--color-bg);color:var(--color-text);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-weight:700;line-height:1.2}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit;font-size:14px}
+.muted{color:var(--color-text-muted)}
+.small{font-size:13px}
+
+/* ---------- Layout ---------- */
+header{background:var(--color-surface);border-bottom:1px solid var(--color-border);position:sticky;top:0;z-index:50}
+.head-inner{max-width:1240px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.logo{width:38px;height:38px;border-radius:10px;background:var(--color-primary);display:grid;place-items:center;color:#fff;font-weight:800;flex-shrink:0;box-shadow:var(--shadow-sm)}
+.logo svg{width:22px;height:22px}
+.title h1{font-size:18px}
+.title p{font-size:12px;color:var(--color-text-muted)}
+.head-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+
+.tabs{max-width:1240px;margin:0 auto;padding:0 20px;display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--color-border);background:var(--color-surface)}
+.tab{padding:12px 14px;border:none;background:none;color:var(--color-text-muted);font-weight:600;font-size:14px;white-space:nowrap;border-bottom:3px solid transparent;display:flex;align-items:center;gap:7px}
+.tab .num{width:20px;height:20px;border-radius:50%;background:var(--color-border);color:var(--color-text-muted);display:grid;place-items:center;font-size:12px;font-weight:700}
+.tab:hover{color:var(--color-text)}
+.tab.active{color:var(--color-primary);border-bottom-color:var(--color-primary)}
+.tab.active .num{background:var(--color-primary);color:#fff}
+.tab.done .num{background:var(--color-success);color:#fff}
+
+main{max-width:1240px;margin:0 auto;padding:24px 20px 80px}
+.panel{display:none;animation:fade .25s ease}
+.panel.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-6);box-shadow:var(--shadow-card);margin-bottom:18px}
+.card h2{font-size:17px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.card .sub{font-size:13px;color:var(--color-text-muted);margin-bottom:18px}
+
+/* ---------- Buttons ---------- */
+.btn{border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:var(--radius-md);padding:9px 14px;font-size:14px;font-weight:600;min-height:40px;transition:transform .1s,background .15s,border-color .15s;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{border-color:#cbd0db;background:#fbfbfd}
+.btn:active{transform:scale(.97)}
+.btn:focus-visible{outline:3px solid var(--color-primary);outline-offset:2px}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.btn-primary{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}
+.btn-primary:hover{background:var(--color-primary-dark);border-color:var(--color-primary-dark)}
+.btn-ghost{background:none;border-color:transparent}
+.btn-sm{min-height:32px;padding:5px 10px;font-size:13px}
+.btn-icon{min-height:34px;padding:6px 9px}
+
+/* ---------- Forms ---------- */
+.field{margin-bottom:14px}
+label{display:block;font-size:13px;font-weight:600;margin-bottom:5px;color:#374151}
+input[type=text],input[type=time],input[type=number],select{width:100%;padding:9px 11px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:#fff;color:var(--color-text)}
+input:focus,select:focus{outline:none;border-color:var(--color-primary);box-shadow:0 0 0 3px var(--color-primary-light)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ---------- Tables ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--color-border);border-radius:var(--radius-md)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--color-border)}
+th{background:#fbfbfd;font-weight:700;color:#374151;position:sticky;top:0}
+tbody tr:nth-child(even){background:#fcfcfd}
+.hours-input{width:54px;text-align:center;padding:5px}
+.total-ok{color:var(--color-success);font-weight:700}
+.total-bad{color:var(--color-error);font-weight:700}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;background:var(--color-primary-light);color:var(--color-primary-dark)}
+.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;color:#fff}
+
+.daychips{display:flex;gap:5px;flex-wrap:wrap}
+.daychip{padding:4px 9px;border:1px solid var(--color-border);border-radius:8px;font-size:12px;font-weight:700;background:#fff;color:var(--color-text-muted);user-select:none}
+.daychip.on{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}
+
+/* ---------- Timetable grid ---------- */
+.tt-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.tt{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed}
+.tt th,.tt td{border:1px solid var(--color-border);text-align:center;vertical-align:middle}
+.tt th{background:#f3f4f6;font-weight:700;padding:7px 4px}
+.tt .timecol{width:74px;background:#fbfbfd;font-weight:700;font-size:11px;color:#374151}
+.cell{height:54px;padding:3px;cursor:pointer;position:relative;transition:box-shadow .1s}
+.cell .m{font-weight:700;font-size:12px;line-height:1.15}
+.cell .p{font-size:10px;opacity:.85;margin-top:2px;line-height:1.1}
+.cell.empty{background:repeating-linear-gradient(45deg,#fafafa,#fafafa 6px,#f3f4f6 6px,#f3f4f6 12px);color:#9ca3af}
+.cell.sel{box-shadow:inset 0 0 0 3px var(--color-secondary)}
+.cell.lock{cursor:not-allowed}
+.cell.recreo-row{background:#fff7ed;color:#9a3412;font-weight:700;font-size:11px;cursor:default}
+.cell.clash{box-shadow:inset 0 0 0 3px var(--color-error)}
+
+/* legend */
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.legend .li{display:flex;align-items:center;gap:6px;font-size:12px}
+.legend .sw{width:14px;height:14px;border-radius:4px}
+
+/* ---------- Toast ---------- */
+#toasts{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:10px;z-index:9999}
+.toast{background:#fff;border-left:4px solid var(--color-success);border-radius:var(--radius-md);padding:12px 16px;box-shadow:var(--shadow-md);max-width:360px;display:flex;align-items:center;gap:10px;animation:slideIn .3s ease;font-size:14px}
+.toast.error{border-left-color:var(--color-error)}
+.toast.warn{border-left-color:var(--color-warning)}
+.toast.info{border-left-color:var(--color-info)}
+@keyframes slideIn{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ---------- Modal ---------- */
+.overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
+.overlay.show{display:flex}
+.modal{background:#fff;border-radius:var(--radius-lg);max-width:520px;width:100%;padding:24px;box-shadow:var(--shadow-md);max-height:90vh;overflow:auto}
+.modal h3{font-size:18px;margin-bottom:14px}
+
+/* notice */
+.notice{display:flex;gap:10px;padding:12px 14px;border-radius:var(--radius-md);font-size:13px;align-items:flex-start;margin-bottom:14px}
+.notice.info{background:var(--color-info-bg);color:#0e5b6e}
+.notice.warn{background:var(--color-warning-bg);color:#92580a}
+.notice.ok{background:var(--color-success-bg);color:#14532d}
+.notice svg{flex-shrink:0;width:18px;height:18px;margin-top:1px}
+
+.skeleton{background:linear-gradient(90deg,#f1f5f9 25%,#e6e8ee 50%,#f1f5f9 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:6px;height:54px}
+@keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+
+.empty-state{text-align:center;padding:40px 20px;color:var(--color-text-muted)}
+.empty-state svg{width:48px;height:48px;opacity:.4;margin-bottom:10px}
+
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* ---------- Print ---------- */
+@media print{
+  header,.tabs,.tt-toolbar,.head-actions,#toasts,.no-print{display:none!important}
+  body{background:#fff}
+  main{padding:0;max-width:none}
+  .card{box-shadow:none;border:none;padding:0;margin:0 0 10px}
+  .print-block{page-break-inside:avoid;margin-bottom:18px}
+  .tt th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .cell{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .print-title{display:block!important;font-size:15px;font-weight:700;margin-bottom:6px}
+}
+.print-title{display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-inner">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 4v17M3 14h18"/></svg>
+    </div>
+    <div class="title">
+      <h1>Cuadra Horarios</h1>
+      <p id="centroLabel">Infantil y Primaria · Andalucía</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-sm" id="btnEjemplo">Cargar ejemplo</button>
+      <button class="btn btn-sm" id="btnLoad">Abrir</button>
+      <button class="btn btn-sm" id="btnSave">Guardar</button>
+      <input type="file" id="fileInput" accept="application/json" hidden>
+    </div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+</header>
+
+<main>
+  <!-- 1. CENTRO -->
+  <section class="panel" data-panel="centro">
+    <div class="card">
+      <h2>1 · Datos del centro y franjas horarias</h2>
+      <p class="sub">Define la jornada. Por defecto: de 9:00 a 14:00 con sesiones de 60 min y recreo de 12:00 a 12:30 (la última franja queda de 30 min). Puedes cambiar la duración a 45 min si tu centro trabaja así.</p>
+      <div class="grid2">
+        <div class="field"><label for="cNombre">Nombre del centro</label><input type="text" id="cNombre"></div>
+        <div class="field"><label for="cInicio">Hora de inicio</label><input type="time" id="cInicio"></div>
+        <div class="field"><label for="cFin">Hora de fin</label><input type="time" id="cFin"></div>
+        <div class="field"><label for="cDur">Duración de cada sesión</label>
+          <select id="cDur"><option value="60">60 min (1 hora)</option><option value="45">45 min</option><option value="30">30 min</option></select></div>
+        <div class="field"><label for="cRecIni">Recreo · inicio</label><input type="time" id="cRecIni"></div>
+        <div class="field"><label for="cRecFin">Recreo · fin</label><input type="time" id="cRecFin"></div>
+        <div class="field"><label for="cT30Ini">Tramos de 30 min · desde <span class="muted small">(opcional)</span></label><input type="time" id="cT30Ini"></div>
+        <div class="field"><label for="cT30Fin">Tramos de 30 min · hasta</label><input type="time" id="cT30Fin"></div>
+      </div>
+      <div id="tramoPreview" class="notice info" style="margin-top:6px"></div>
+      <div id="presetBox"></div>
+    </div>
+    <div class="card">
+      <h2>Plantilla del horario (vacía)</h2>
+      <p class="sub">Así queda la rejilla con la jornada actual, antes de rellenar nada. Se actualiza al cambiar la jornada arriba.</p>
+      <div id="plantillaVacia"></div>
+    </div>
+  </section>
+
+  <!-- 2. MATERIAS -->
+  <section class="panel" data-panel="materias">
+    <div class="card">
+      <h2>2 · Reparto de horas por materia</h2>
+      <p class="sub">Sesiones semanales de cada materia por curso. Precargado con el Anexo II (Primaria). Edítalo libremente. La <strong>Autonomía del centro</strong> son sesiones a tu criterio (refuerzo, ampliar troncales…). El total de cada curso debe coincidir con las sesiones de la semana.</p>
+      <div class="tbl-wrap"><table id="horasTable"></table></div>
+    </div>
+  </section>
+
+  <!-- 3. MAESTROS -->
+  <section class="panel" data-panel="maestros">
+    <div class="card">
+      <h2>3 · Claustro</h2>
+      <p class="sub">Da de alta a cada maestro/a con su nombre, especialidad y los días/tramos en los que está en el centro (por defecto, todos). Esto resuelve a religión, itinerantes, compartidos y media jornada.</p>
+      <button class="btn btn-primary" id="btnAddMaestro">+ Añadir maestro/a</button>
+      <div id="maestrosList" style="margin-top:16px"></div>
+    </div>
+  </section>
+
+  <!-- 4. ASIGNACIÓN -->
+  <section class="panel" data-panel="asignacion">
+    <div class="card">
+      <h2>4 · Asignación por grupo</h2>
+      <p class="sub">Para cada grupo: elige tutor/a y quién imparte cada materia. Las áreas del tutor se autocompletan; los especialistas los eliges tú.</p>
+      <div id="asigList"></div>
+    </div>
+    <div class="card">
+      <h2>Religión (banda paralela)</h2>
+      <p class="sub">La religión ocupa una única franja por grupo donde conviven Católica, Evangélica y Atención Educativa. Configura quién imparte cada opción. Evangélica solo se imparte donde la marques (por defecto 4º·5º·6º) y según su disponibilidad (martes).</p>
+      <div class="tbl-wrap"><table id="relTable"></table></div>
+    </div>
+  </section>
+
+  <!-- 5. HORARIOS -->
+  <section class="panel" data-panel="horarios">
+    <div class="card">
+      <div class="tt-toolbar">
+        <button class="btn btn-primary" id="btnGenerar">⚙ Generar horarios</button>
+        <div class="inline" id="viewSwitch" style="display:none">
+          <label style="margin:0">Ver:</label>
+          <select id="viewMode" style="width:auto">
+            <option value="grupo">Por grupo</option>
+            <option value="maestro">Por maestro</option>
+          </select>
+          <select id="viewTarget" style="width:auto"></select>
+          <button class="btn btn-sm" id="btnPrint">🖨 Imprimir / PDF</button>
+          <button class="btn btn-sm" id="btnPrintAll">Imprimir todos</button>
+        </div>
+      </div>
+      <div id="genStatus"></div>
+      <div id="ttContainer">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 4v17"/></svg>
+          <p>Configura los pasos 1–4 y pulsa <strong>Generar horarios</strong>.<br>Puedes pulsar <strong>“Cargar ejemplo”</strong> arriba para verlo funcionando al instante.</p>
+        </div>
+      </div>
+    </div>
+    <div class="card no-print" id="printArea" style="display:none"></div>
+  </section>
+</main>
+
+<div id="toasts"></div>
+
+<!-- Modal maestro -->
+<div class="overlay" id="mOverlay">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 id="mTitle">Maestro/a</h3>
+    <div class="field"><label for="mNombre">Nombre de pila</label><input type="text" id="mNombre" placeholder="Ej.: Lucía"></div>
+    <div class="field"><label for="mRol">Especialidad / rol</label>
+      <select id="mRol">
+        <option>Tutor/a</option><option>Inglés</option><option>Educación Física</option>
+        <option>Música</option><option>Francés</option><option>Religión Católica</option>
+        <option>Religión Evangélica</option><option>Pedagogía Terapéutica (PT)</option>
+        <option>Audición y Lenguaje (AL)</option><option>Infantil</option><option>Apoyo / Refuerzo</option><option>Otra</option>
+      </select>
+    </div>
+    <div class="field"><label>Días que viene al centro</label><div class="daychips" id="mDias"></div></div>
+    <div class="field"><label>Tramos disponibles (si no marcas ninguno = todos)</label><div class="daychips" id="mTramos"></div></div>
+    <div class="inline" style="justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-ghost" id="mCancel">Cancelar</button>
+      <button class="btn btn-primary" id="mSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   CONFIGURACIÓN BASE
+   ========================================================================= */
+const DIAS = ['L','M','X','J','V'];
+const DIAS_LARGO = {L:'Lunes',M:'Martes',X:'Miércoles',J:'Jueves',V:'Viernes'};
+
+const MATERIAS = [
+  {id:'LEN', nombre:'Lengua',        full:'Lengua Castellana y Literatura', color:'#7c3aed', etapas:['PRI'], rol:'core'},
+  {id:'MAT', nombre:'Matemáticas',   full:'Matemáticas',                    color:'#2563eb', etapas:['PRI'], rol:'core'},
+  {id:'CMED',nombre:'Conoc. Medio', full:'Conocimiento del Medio Natural, Social y Cultural (bilingüe)', color:'#0d9488', etapas:['PRI'], rol:'spec'},
+  {id:'ING', nombre:'Inglés',        full:'1ª Lengua Extranjera (Inglés)',  color:'#dc2626', etapas:['PRI','INF'], rol:'spec'},
+  {id:'EF',  nombre:'E. Física',     full:'Educación Física',               color:'#ea580c', etapas:['PRI'], rol:'spec'},
+  {id:'FRA', nombre:'Francés',       full:'2ª Lengua Extranjera (Francés)', color:'#db2777', etapas:['PRI'], rol:'spec'},
+  {id:'ART', nombre:'Plástica',     full:'Educación Plástica y Visual',     color:'#d97706', etapas:['PRI'], rol:'core'},
+  {id:'MUS', nombre:'Música',        full:'Música',                         color:'#c026d3', etapas:['PRI'], rol:'spec'},
+  {id:'LCA', nombre:'Libre Config.', full:'Libre Configuración Autonómica', color:'#0891b2', etapas:['PRI'], rol:'core'},
+  {id:'AUT', nombre:'Autonomía',     full:'Autonomía del centro / Refuerzo',color:'#65a30d', etapas:['PRI'], rol:'core'},
+  {id:'GLO', nombre:'Globalizada',   full:'Globalizada / Tutoría (Infantil)',color:'#0ea5e9',etapas:['INF'], rol:'core'},
+  {id:'PSI', nombre:'Psicomotric.',  full:'Psicomotricidad (Infantil)',     color:'#f59e0b', etapas:['INF'], rol:'core'},
+  {id:'REL', nombre:'Religión',      full:'Religión / Atención Educativa',   color:'#9333ea', etapas:['PRI','INF'], rol:'religion'},
+];
+const MAT = Object.fromEntries(MATERIAS.map(m=>[m.id,m]));
+
+const GRUPOS = [
+  {id:'INF3', nombre:'Inf. 3 años', etapa:'INF'},
+  {id:'INF4', nombre:'Inf. 4 años', etapa:'INF'},
+  {id:'INF5', nombre:'Inf. 5 años', etapa:'INF'},
+  {id:'1', nombre:'1º Primaria', etapa:'PRI'},
+  {id:'2', nombre:'2º Primaria', etapa:'PRI'},
+  {id:'3', nombre:'3º Primaria', etapa:'PRI'},
+  {id:'4', nombre:'4º Primaria', etapa:'PRI'},
+  {id:'5', nombre:'5º Primaria', etapa:'PRI'},
+  {id:'6', nombre:'6º Primaria', etapa:'PRI'},
+];
+const GRP = Object.fromEntries(GRUPOS.map(g=>[g.id,g]));
+
+// Reparto para jornada de 45' (6 sesiones/día · 30/semana) — Anexo II
+const HORAS_45 = {
+  '1':{LEN:6,MAT:6,CMED:4,ING:2,EF:2,FRA:1,ART:1,MUS:1,AUT:6,REL:1},
+  '2':{LEN:6,MAT:6,CMED:4,ING:2,EF:2,FRA:1,ART:1,MUS:1,AUT:6,REL:1},
+  '3':{LEN:6,MAT:5,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,AUT:5,REL:1},
+  '4':{LEN:6,MAT:5,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,AUT:5,REL:1},
+  '5':{LEN:5,MAT:5,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,LCA:2,AUT:4,REL:1},
+  '6':{LEN:5,MAT:5,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,LCA:2,AUT:4,REL:1},
+  'INF3':{GLO:26,PSI:2,ING:1,REL:1},
+  'INF4':{GLO:26,PSI:2,ING:1,REL:1},
+  'INF5':{GLO:26,PSI:2,ING:1,REL:1},
+};
+// Reparto orientativo para jornada de 60' (5 sesiones/día · 25/semana, última de 30')
+const HORAS_60 = {
+  '1':{LEN:5,MAT:5,CMED:4,ING:2,EF:2,FRA:1,ART:1,MUS:1,AUT:3,REL:1},
+  '2':{LEN:5,MAT:5,CMED:4,ING:2,EF:2,FRA:1,ART:1,MUS:1,AUT:3,REL:1},
+  '3':{LEN:5,MAT:4,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,AUT:2,REL:1},
+  '4':{LEN:5,MAT:4,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,AUT:2,REL:1},
+  '5':{LEN:4,MAT:4,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,LCA:2,AUT:1,REL:1},
+  '6':{LEN:4,MAT:4,CMED:4,ING:3,EF:2,FRA:2,ART:1,MUS:1,LCA:2,AUT:1,REL:1},
+  'INF3':{GLO:21,PSI:2,ING:1,REL:1},
+  'INF4':{GLO:21,PSI:2,ING:1,REL:1},
+  'INF5':{GLO:21,PSI:2,ING:1,REL:1},
+};
+// elige el reparto sugerido según nº de sesiones lectivas/semana
+function presetHoras(slotsSemana){
+  if(slotsSemana===25) return HORAS_60;
+  if(slotsSemana===30) return HORAS_45;
+  return null;
+}
+
+/* =========================================================================
+   ESTADO
+   ========================================================================= */
+let state = null;
+function freshState(){
+  return {
+    centro:{nombre:'CEIP Capitulaciones de Santa Fe', inicio:'09:00', fin:'14:00', dur:60, recreoIni:'12:00', recreoFin:'12:30', tramo30Ini:'', tramo30Fin:''},
+    horas: JSON.parse(JSON.stringify(HORAS_60)),
+    maestros: [],        // {id,nombre,rol,dias:[...]|null, tramos:[...]|null}
+    tutores: {},         // grupoId -> maestroId
+    asig: {},            // grupoId -> {materiaId -> maestroId}
+    religion: {},        // grupoId -> {cat,ev,ae}
+    resultado: null,     // grupoId -> [dia][slot] = {mat,prof,band:{cat,ev,ae}}|null
+  };
+}
+let uid = 1; const nid = ()=> 'm'+(uid++);
+
+/* =========================================================================
+   UTILIDADES UI
+   ========================================================================= */
+function toast(msg,type='success'){
+  const t=document.createElement('div'); t.className='toast '+(type==='success'?'':type);
+  const ic={success:'✓',error:'✕',warn:'!',info:'i'}[type]||'✓';
+  t.innerHTML=`<strong>${ic}</strong><span>${msg}</span>`;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},3200);
+}
+function toMin(t){const [h,m]=t.split(':').map(Number);return h*60+m;}
+// duración aplicable en un instante: 30' si cae en la franja de medias, si no la base
+function durEn(cur){
+  const c=state.centro;
+  if(c.tramo30Ini && c.tramo30Fin){
+    const a=toMin(c.tramo30Ini), b=toMin(c.tramo30Fin);
+    if(cur>=a && cur<b) return 30;
+  }
+  return c.dur||60;
+}
+// Genera las franjas reales: lectivas (con su índice i) + el recreo a hora fija.
+function tramoTimes(){
+  const c=state.centro;
+  const ini=toMin(c.inicio), fin=toMin(c.fin), rIni=toMin(c.recreoIni), rFin=toMin(c.recreoFin);
+  const out=[]; let cur=ini, recreoPuesto=false, idx=0, guard=0;
+  const tieneRecreo=(rFin>rIni && rIni>=ini && rFin<=fin);
+  const a30=c.tramo30Ini?toMin(c.tramo30Ini):null, b30=c.tramo30Fin?toMin(c.tramo30Fin):null;
+  while(cur<fin-0.001 && guard++<80){
+    if(tieneRecreo && !recreoPuesto && cur>=rIni){ out.push({recreo:true, ini:fmt(rIni), fin:fmt(rFin)}); cur=rFin; recreoPuesto=true; continue; }
+    let end=cur+durEn(cur);
+    if(a30!=null){ if(cur<a30 && end>a30) end=a30; if(cur>=a30 && cur<b30 && end>b30) end=b30; } // no cruzar límites de la franja de 30'
+    if(tieneRecreo && !recreoPuesto && end>rIni) end=rIni; // no cruzar el recreo
+    if(end>fin) end=fin;
+    if(end<=cur) break;
+    out.push({i:idx++, ini:fmt(cur), fin:fmt(end), dur:end-cur});
+    cur=end;
+  }
+  return out;
+}
+function lectivos(){return tramoTimes().filter(t=>!t.recreo);}
+function numTramos(){return lectivos().length;}
+function fmt(min){const h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
+function maestroNombre(id){const m=state.maestros.find(x=>x.id===id);return m?m.nombre:'—';}
+function slotsSemana(){return numTramos()*DIAS.length;}
+
+/* =========================================================================
+   NAVEGACIÓN
+   ========================================================================= */
+const TABS=[
+  {id:'centro',label:'Centro'},
+  {id:'materias',label:'Materias'},
+  {id:'maestros',label:'Claustro'},
+  {id:'asignacion',label:'Asignación'},
+  {id:'horarios',label:'Horarios'},
+];
+let activeTab='centro';
+function renderTabs(){
+  const el=document.getElementById('tabs'); el.innerHTML='';
+  TABS.forEach((t,i)=>{
+    const b=document.createElement('button');
+    b.className='tab'+(t.id===activeTab?' active':'');
+    b.innerHTML=`<span class="num">${i+1}</span>${t.label}`;
+    b.onclick=()=>go(t.id);
+    el.appendChild(b);
+  });
+}
+function go(id){
+  activeTab=id;
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.dataset.panel===id));
+  renderTabs();
+  if(id==='materias') renderHoras();
+  if(id==='maestros') renderMaestros();
+  if(id==='asignacion'){renderAsig();renderRel();}
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* =========================================================================
+   PANEL 1 · CENTRO
+   ========================================================================= */
+function bindCentro(){
+  const map={cNombre:'nombre',cInicio:'inicio',cFin:'fin',cDur:'dur',cRecIni:'recreoIni',cRecFin:'recreoFin',cT30Ini:'tramo30Ini',cT30Fin:'tramo30Fin'};
+  for(const [el,key] of Object.entries(map)){
+    const node=document.getElementById(el);
+    node.addEventListener('input',()=>{
+      let v=node.value;
+      if(key==='dur') v=parseInt(v||'60',10);
+      state.centro[key]=v;
+      document.getElementById('centroLabel').textContent=state.centro.nombre||'Infantil y Primaria · Andalucía';
+      previewTramos();
+    });
+  }
+}
+function fillCentro(){
+  document.getElementById('cNombre').value=state.centro.nombre;
+  document.getElementById('cInicio').value=state.centro.inicio;
+  document.getElementById('cFin').value=state.centro.fin;
+  document.getElementById('cDur').value=state.centro.dur;
+  document.getElementById('cRecIni').value=state.centro.recreoIni;
+  document.getElementById('cRecFin').value=state.centro.recreoFin;
+  document.getElementById('cT30Ini').value=state.centro.tramo30Ini||'';
+  document.getElementById('cT30Fin').value=state.centro.tramo30Fin||'';
+  document.getElementById('centroLabel').textContent=state.centro.nombre;
+  previewTramos();
+}
+function previewTramos(){
+  const lt=lectivos(); const total=slotsSemana();
+  const partes=tramoTimes().map(t=> t.recreo
+      ? `<span style="color:#9a3412">▮ recreo ${t.ini}-${t.fin}</span>`
+      : `${t.ini}-${t.fin}${t.dur<state.centro.dur?` <em>(${t.dur}′)</em>`:''}`);
+  document.getElementById('tramoPreview').innerHTML=
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`+
+    `<div><strong>${lt.length} sesiones/día</strong> → ${total} a la semana por grupo.<br>${partes.join(' · ')}</div>`;
+  // sugerencia de reparto si coincide con un preset conocido
+  const box=document.getElementById('presetBox'); const pre=presetHoras(total);
+  if(pre){
+    box.innerHTML=`<button class="btn btn-sm" id="btnPreset" style="margin-top:10px">Cargar reparto sugerido (${total} sesiones/semana)</button>`;
+    document.getElementById('btnPreset').onclick=()=>{ state.horas=JSON.parse(JSON.stringify(pre)); toast('Reparto sugerido cargado. Revísalo en el paso 2.'); if(activeTab==='materias')renderHoras(); };
+  } else box.innerHTML='';
+  renderPlantillaVacia();
+}
+function renderPlantillaVacia(){
+  const cont=document.getElementById('plantillaVacia'); if(!cont)return;
+  let html='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
+  tramoTimes().forEach(t=>{
+    if(t.recreo){html+=`<tr><td class="timecol">Recreo<br>${t.ini}-${t.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
+    const badge=t.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${t.dur}′</span>`:'';
+    html+=`<tr><td class="timecol">${t.ini}<br>${t.fin}${badge}</td>${DIAS.map(()=>'<td class="cell empty">·</td>').join('')}</tr>`;
+  });
+  html+='</tbody></table>';
+  cont.innerHTML=html;
+}
+
+/* =========================================================================
+   PANEL 2 · MATERIAS / HORAS
+   ========================================================================= */
+function materiasDeEtapa(etapa){return MATERIAS.filter(m=>m.etapas.includes(etapa));}
+function renderHoras(){
+  const tbl=document.getElementById('horasTable');
+  const filas=MATERIAS.filter(m=>GRUPOS.some(g=>m.etapas.includes(g.etapa)));
+  let html='<thead><tr><th style="min-width:150px">Materia</th>';
+  GRUPOS.forEach(g=>html+=`<th title="${g.nombre}">${g.id.startsWith('INF')?g.id.replace('INF','I'):g.id+'º'}</th>`);
+  html+='</tr></thead><tbody>';
+  filas.forEach(m=>{
+    html+=`<tr><td><span class="tag" style="background:${m.color}">${m.nombre}</span></td>`;
+    GRUPOS.forEach(g=>{
+      const aplica=m.etapas.includes(g.etapa);
+      if(!aplica){html+='<td style="background:#f8fafc"></td>';return;}
+      const v=state.horas[g.id]?.[m.id]||0;
+      html+=`<td><input class="hours-input" type="number" min="0" max="20" value="${v}" data-g="${g.id}" data-m="${m.id}"></td>`;
+    });
+    html+='</tr>';
+  });
+  // fila totales
+  html+='<tr style="background:#f3f4f6;font-weight:700"><td>Total / semana</td>';
+  GRUPOS.forEach(g=>html+=`<td id="tot-${g.id}"></td>`);
+  html+='</tr></tbody>';
+  tbl.innerHTML=html;
+  tbl.querySelectorAll('.hours-input').forEach(inp=>{
+    inp.addEventListener('input',()=>{
+      const g=inp.dataset.g,m=inp.dataset.m;
+      if(!state.horas[g])state.horas[g]={};
+      state.horas[g][m]=parseInt(inp.value||'0',10);
+      updTotales();
+    });
+  });
+  updTotales();
+}
+function totalGrupo(g){return Object.values(state.horas[g]||{}).reduce((a,b)=>a+(parseInt(b)||0),0);}
+function updTotales(){
+  const need=slotsSemana();
+  GRUPOS.forEach(g=>{
+    const c=document.getElementById('tot-'+g.id); if(!c)return;
+    const t=totalGrupo(g.id);
+    c.textContent=t;
+    c.className=(t===need)?'total-ok':'total-bad';
+    c.title=(t===need)?'Cuadra':'Debe ser '+need;
+  });
+}
+
+/* =========================================================================
+   PANEL 3 · MAESTROS
+   ========================================================================= */
+let editingMaestro=null;
+function renderMaestros(){
+  const box=document.getElementById('maestrosList');
+  if(state.maestros.length===0){
+    box.innerHTML='<div class="empty-state"><p>Aún no hay maestros. Pulsa <strong>“Añadir maestro/a”</strong> o <strong>“Cargar ejemplo”</strong>.</p></div>';
+    return;
+  }
+  let html='<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Especialidad</th><th>Disponibilidad</th><th></th></tr></thead><tbody>';
+  state.maestros.forEach(m=>{
+    const dias=m.dias?m.dias.join(' '):'Todos los días';
+    const tr=m.tramos&&m.tramos.length?(' · tramos '+m.tramos.map(x=>x+1).join(',')):'';
+    html+=`<tr><td><strong>${m.nombre}</strong></td><td>${m.rol}</td><td class="small muted">${dias}${tr}</td>
+      <td style="white-space:nowrap"><button class="btn btn-sm btn-icon" data-edit="${m.id}">✎</button>
+      <button class="btn btn-sm btn-icon" data-del="${m.id}">🗑</button></td></tr>`;
+  });
+  html+='</tbody></table></div>';
+  box.innerHTML=html;
+  box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openMaestro(b.dataset.edit));
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    state.maestros=state.maestros.filter(x=>x.id!==b.dataset.del);
+    // limpiar referencias
+    for(const g in state.tutores) if(state.tutores[g]===b.dataset.del) delete state.tutores[g];
+    renderMaestros();
+  });
+}
+function openMaestro(id){
+  editingMaestro=id?state.maestros.find(m=>m.id===id):{id:nid(),nombre:'',rol:'Tutor/a',dias:null,tramos:null,_new:true};
+  document.getElementById('mTitle').textContent=id?'Editar maestro/a':'Nuevo maestro/a';
+  document.getElementById('mNombre').value=editingMaestro.nombre;
+  document.getElementById('mRol').value=editingMaestro.rol;
+  // días
+  const dd=document.getElementById('mDias');dd.innerHTML='';
+  DIAS.forEach(d=>{
+    const on=!editingMaestro.dias||editingMaestro.dias.includes(d);
+    const c=document.createElement('span');c.className='daychip'+(on?' on':'');c.textContent=DIAS_LARGO[d];c.dataset.d=d;
+    c.onclick=()=>c.classList.toggle('on');dd.appendChild(c);
+  });
+  // tramos
+  const tt=document.getElementById('mTramos');tt.innerHTML='';
+  const NS=numTramos();
+  for(let i=0;i<NS;i++){
+    const on=editingMaestro.tramos&&editingMaestro.tramos.includes(i);
+    const c=document.createElement('span');c.className='daychip'+(on?' on':'');c.textContent=(i+1)+'ª';c.dataset.t=i;
+    c.onclick=()=>c.classList.toggle('on');tt.appendChild(c);
+  }
+  document.getElementById('mOverlay').classList.add('show');
+  setTimeout(()=>document.getElementById('mNombre').focus(),50);
+}
+function saveMaestro(){
+  const nombre=document.getElementById('mNombre').value.trim();
+  if(!nombre){toast('Pon un nombre','error');return;}
+  editingMaestro.nombre=nombre;
+  editingMaestro.rol=document.getElementById('mRol').value;
+  const dias=[...document.querySelectorAll('#mDias .daychip.on')].map(c=>c.dataset.d);
+  editingMaestro.dias=(dias.length===DIAS.length||dias.length===0)?null:dias;
+  const tramos=[...document.querySelectorAll('#mTramos .daychip.on')].map(c=>parseInt(c.dataset.t));
+  editingMaestro.tramos=tramos.length?tramos:null;
+  if(editingMaestro._new){delete editingMaestro._new;state.maestros.push(editingMaestro);}
+  document.getElementById('mOverlay').classList.remove('show');
+  renderMaestros();
+  toast('Maestro/a guardado/a');
+}
+function closeModal(){document.getElementById('mOverlay').classList.remove('show');}
+
+/* =========================================================================
+   PANEL 4 · ASIGNACIÓN
+   ========================================================================= */
+function profOptions(selected){
+  let o='<option value="">— elige —</option>';
+  state.maestros.forEach(m=>o+=`<option value="${m.id}"${m.id===selected?' selected':''}>${m.nombre} · ${m.rol}</option>`);
+  return o;
+}
+function renderAsig(){
+  const box=document.getElementById('asigList');
+  if(state.maestros.length===0){box.innerHTML='<div class="notice warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Primero añade maestros en el paso 3.</div>';return;}
+  let html='';
+  GRUPOS.forEach(g=>{
+    const mats=materiasDeEtapa(g.etapa).filter(m=>m.rol!=='religion' && (state.horas[g.id]?.[m.id]||0)>0);
+    if(!state.asig[g.id])state.asig[g.id]={};
+    html+=`<div style="border:1px solid var(--color-border);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div class="inline" style="justify-content:space-between;margin-bottom:10px">
+        <strong style="font-size:15px">${g.nombre}</strong>
+        <div class="inline"><label style="margin:0">Tutor/a:</label>
+        <select data-tutor="${g.id}" style="width:auto;min-width:180px">${profOptions(state.tutores[g.id])}</select></div>
+      </div>
+      <div class="grid2">`;
+    mats.forEach(m=>{
+      const cur=state.asig[g.id][m.id]||'';
+      html+=`<div class="field" style="margin:0">
+        <label><span class="tag" style="background:${m.color}">${m.nombre}</span> · ${state.horas[g.id][m.id]}h</label>
+        <select data-asig="${g.id}|${m.id}">${profOptions(cur)}</select></div>`;
+    });
+    html+='</div></div>';
+  });
+  box.innerHTML=html;
+  box.querySelectorAll('[data-tutor]').forEach(s=>s.onchange=()=>{
+    const g=s.dataset.tutor; state.tutores[g]=s.value;
+    // autocompletar áreas core con el tutor si están vacías
+    materiasDeEtapa(GRP[g].etapa).filter(m=>m.rol==='core').forEach(m=>{
+      if((state.horas[g]?.[m.id]||0)>0 && !state.asig[g]?.[m.id]){ if(!state.asig[g])state.asig[g]={}; state.asig[g][m.id]=s.value; }
+    });
+    // AE de religión por defecto = tutor
+    if(!state.religion[g])state.religion[g]={};
+    if(!state.religion[g].ae) state.religion[g].ae=s.value;
+    renderAsig(); renderRel();
+  });
+  box.querySelectorAll('[data-asig]').forEach(s=>s.onchange=()=>{
+    const [g,m]=s.dataset.asig.split('|'); if(!state.asig[g])state.asig[g]={}; state.asig[g][m]=s.value;
+  });
+}
+function renderRel(){
+  const tbl=document.getElementById('relTable');
+  let html='<thead><tr><th>Grupo</th><th>Sesiones</th><th>Católica</th><th>Evangélica</th><th>Atención Educativa</th></tr></thead><tbody>';
+  GRUPOS.forEach(g=>{
+    const h=state.horas[g.id]?.REL||0;
+    if(!state.religion[g.id])state.religion[g.id]={};
+    const r=state.religion[g.id];
+    if(r.ae===undefined && state.tutores[g.id]) r.ae=state.tutores[g.id];
+    html+=`<tr><td><strong>${g.nombre}</strong></td><td>${h}</td>
+      <td><select data-rel="${g.id}|cat" style="min-width:150px">${profOptions(r.cat)}</select></td>
+      <td><select data-rel="${g.id}|ev" style="min-width:150px"><option value="">— ninguna —</option>${state.maestros.map(m=>`<option value="${m.id}"${m.id===r.ev?' selected':''}>${m.nombre}</option>`).join('')}</select></td>
+      <td><select data-rel="${g.id}|ae" style="min-width:150px">${profOptions(r.ae)}</select></td></tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+  tbl.querySelectorAll('[data-rel]').forEach(s=>s.onchange=()=>{
+    const [g,k]=s.dataset.rel.split('|'); if(!state.religion[g])state.religion[g]={}; state.religion[g][k]=s.value;
+  });
+}
+
+/* =========================================================================
+   MOTOR DE CUADRE
+   ========================================================================= */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function key(d,s){return d*100+s;}
+
+function buildEngineState(){
+  const ND=DIAS.length, NS=numTramos();
+  const grid={}; GRUPOS.forEach(g=>grid[g.id]=Array.from({length:ND},()=>Array(NS).fill(null)));
+  const avail={};
+  state.maestros.forEach(m=>{
+    if(!m.dias && !m.tramos) return; // todo disponible
+    const set=new Set();
+    const dias=m.dias||DIAS;
+    const tramos=(m.tramos&&m.tramos.length)?m.tramos:[...Array(NS).keys()];
+    dias.forEach(d=>{const di=DIAS.indexOf(d); tramos.forEach(t=>set.add(key(di,t)));});
+    avail[m.id]=set;
+  });
+  return {ND,NS,grid,busy:{},avail};
+}
+function isAvail(es,t,d,s){const a=es.avail[t];return !a||a.has(key(d,s));}
+function tBusy(es,t,d,s){return es.busy[t]&&es.busy[t].has(key(d,s));}
+function gBusy(es,g,d,s){return es.grid[g][d][s]!=null;}
+function occ(es,t,d,s,v){if(!es.busy[t])es.busy[t]=new Set();const k=key(d,s);v?es.busy[t].add(k):es.busy[t].delete(k);}
+
+function relDomain(es,b){const dom=[];for(let d=0;d<es.ND;d++)for(let s=0;s<es.NS;s++){
+  if(gBusy(es,b.g,d,s))continue;
+  if(!isAvail(es,b.cat,d,s)||tBusy(es,b.cat,d,s))continue;
+  if(b.ev){if(!isAvail(es,b.ev,d,s)||tBusy(es,b.ev,d,s))continue;}
+  if(b.ae){if(!isAvail(es,b.ae,d,s)||tBusy(es,b.ae,d,s))continue;}
+  dom.push({d,s});}return dom;}
+function relPlace(es,b,c){es.grid[b.g][c.d][c.s]={mat:'REL',prof:b.cat,band:{cat:b.cat,ev:b.ev,ae:b.ae}};occ(es,b.cat,c.d,c.s,1);if(b.ev)occ(es,b.ev,c.d,c.s,1);if(b.ae)occ(es,b.ae,c.d,c.s,1);}
+function relUnplace(es,b,c){es.grid[b.g][c.d][c.s]=null;occ(es,b.cat,c.d,c.s,0);if(b.ev)occ(es,b.ev,c.d,c.s,0);if(b.ae)occ(es,b.ae,c.d,c.s,0);}
+
+function sessDomain(es,x){const dom=[];for(let d=0;d<es.ND;d++)for(let s=0;s<es.NS;s++){
+  if(gBusy(es,x.g,d,s))continue; if(tBusy(es,x.t,d,s))continue; if(!isAvail(es,x.t,d,s))continue; dom.push({d,s});}return dom;}
+function sessPlace(es,x,c){es.grid[x.g][c.d][c.s]={mat:x.m,prof:x.t};occ(es,x.t,c.d,c.s,1);}
+function sessUnplace(es,x,c){es.grid[x.g][c.d][c.s]=null;occ(es,x.t,c.d,c.s,0);}
+
+function softScore(es,x,c){
+  let sc=0; const m=x.m;
+  if(m==='LEN'||m==='GLO') sc+=(es.NS-c.s)*3;      // lengua/globalizada a primeras horas
+  if(m==='MAT'){ sc+=(es.NS-c.s)*2; if(c.s>=1)sc+=2; } // mates pronto, tras la primera
+  if(['ING','EF','FRA','ART','PSI'].includes(m)) sc+=c.s*1.2; // dejar las primeras horas a Lengua/Mates
+  // penalizar misma materia el mismo día
+  for(let s=0;s<es.NS;s++){const cc=es.grid[x.g][c.d][s];if(cc&&cc.mat===m)sc-=10;}
+  return sc;
+}
+function solveShared(es,tasks,rnd,deadline){
+  function dom(t){return t.kind==='rel'?relDomain(es,t.b):sessDomain(es,t.x);}
+  function bt(rem){
+    if(Date.now()>deadline)return false;
+    if(rem.length===0)return true;
+    let bi=-1,bd=null,bl=Infinity;
+    for(let i=0;i<rem.length;i++){const d=dom(rem[i]);if(d.length<bl){bl=d.length;bd=d;bi=i;if(bl===0)break;}}
+    if(bl===0)return false;
+    const t=rem[bi]; const rest=rem.slice(0,bi).concat(rem.slice(bi+1));
+    let order=bd.map(c=>({c,sc:(t.kind==='sess'?softScore(es,t.x,c):0)+rnd()*0.6}));
+    order.sort((a,b)=>b.sc-a.sc);
+    for(const{c}of order){
+      if(t.kind==='rel')relPlace(es,t.b,c);else sessPlace(es,t.x,c);
+      if(bt(rest))return true;
+      if(t.kind==='rel')relUnplace(es,t.b,c);else sessUnplace(es,t.x,c);
+      if(Date.now()>deadline)return false;
+    }
+    return false;
+  }
+  return bt(tasks.slice());
+}
+function fillTutor(es,sessions){
+  for(const ts of sessions){
+    for(let n=0;n<ts.count;n++){
+      const free=[];
+      for(let d=0;d<es.ND;d++)for(let s=0;s<es.NS;s++){
+        if(es.grid[ts.g][d][s]==null && !tBusy(es,ts.t,d,s) && isAvail(es,ts.t,d,s)) free.push({d,s});
+      }
+      if(free.length===0)return false;
+      free.sort((a,b)=>softScore(es,{g:ts.g,m:ts.m,t:ts.t},b)-softScore(es,{g:ts.g,m:ts.m,t:ts.t},a));
+      const c=free[0];
+      es.grid[ts.g][c.d][c.s]={mat:ts.m,prof:ts.t};occ(es,ts.t,c.d,c.s,1);
+    }
+  }
+  return true;
+}
+
+function generar(){
+  // validación
+  const problemas=validar();
+  if(problemas.length){
+    document.getElementById('genStatus').innerHTML=
+      '<div class="notice warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><div><strong>Antes de generar, revisa:</strong><ul style="margin:6px 0 0 18px">'+
+      problemas.map(p=>`<li>${p}</li>`).join('')+'</ul></div></div>';
+    return;
+  }
+  const btn=document.getElementById('btnGenerar'); btn.disabled=true; btn.textContent='Cuadrando…';
+  document.getElementById('genStatus').innerHTML='';
+  document.getElementById('ttContainer').innerHTML=skeletonGrid();
+  setTimeout(()=>{ runEngine(btn); },60);
+}
+function validar(){
+  const p=[]; const need=slotsSemana();
+  GRUPOS.forEach(g=>{ if(totalGrupo(g.id)!==need) p.push(`${g.nombre}: las horas suman ${totalGrupo(g.id)}, deben sumar ${need}.`); });
+  GRUPOS.forEach(g=>{
+    const mats=materiasDeEtapa(g.etapa).filter(m=>m.rol!=='religion'&&(state.horas[g.id]?.[m.id]||0)>0);
+    mats.forEach(m=>{ if(!state.asig[g.id]?.[m.id]) p.push(`${g.nombre}: falta asignar maestro a ${m.nombre}.`); });
+    if((state.horas[g.id]?.REL||0)>0 && !state.religion[g.id]?.cat) p.push(`${g.nombre}: falta el/la maestro/a de Religión Católica.`);
+  });
+  return p;
+}
+function runEngine(btn){
+  const tasksBase=buildTasks();
+  let ok=false, es=null, attempts=0;
+  const t0=performance.now();
+  for(let seed=1;seed<=60 && !ok;seed++){
+    attempts++;
+    es=buildEngineState();
+    const rnd=mulberry32(seed*7919+13);
+    const shared=tasksBase.shared.slice();
+    for(let i=shared.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[shared[i],shared[j]]=[shared[j],shared[i]];}
+    const deadline=Date.now()+800;
+    if(solveShared(es,shared,rnd,deadline)){
+      if(fillTutor(es,tasksBase.tutor)) ok=true;
+    }
+  }
+  const ms=Math.round(performance.now()-t0);
+  btn.disabled=false; btn.textContent='⚙ Generar horarios';
+  if(!ok){
+    document.getElementById('ttContainer').innerHTML='';
+    document.getElementById('genStatus').innerHTML=
+      '<div class="notice warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><div><strong>No se ha podido cuadrar sin solapes.</strong> Suele indicar que un maestro tiene más carga de la que cabe en sus días/tramos disponibles, o que la banda de religión no encaja. Revisa disponibilidades y reparto, y vuelve a intentarlo.</div></div>';
+    return;
+  }
+  // volcar a state.resultado
+  state.resultado={};
+  GRUPOS.forEach(g=>state.resultado[g.id]=es.grid[g.id]);
+  document.getElementById('genStatus').innerHTML=
+    `<div class="notice ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Horarios generados sin solapamientos en ${ms} ms (${attempts} ${attempts===1?'intento':'intentos'}). Puedes ajustarlos a mano pulsando dos celdas para intercambiarlas.</div>`;
+  setupResultsView();
+}
+function buildTasks(){
+  // determinar maestros "compartidos" (en >1 grupo o con disponibilidad restringida)
+  const grupos={}; // maestroId -> set grupos
+  function reg(t,g){if(!t)return;(grupos[t]=grupos[t]||new Set()).add(g);}
+  GRUPOS.forEach(g=>{
+    materiasDeEtapa(g.etapa).forEach(m=>{
+      if(m.rol==='religion')return;
+      if((state.horas[g.id]?.[m.id]||0)>0) reg(state.asig[g.id]?.[m.id],g.id);
+    });
+  });
+  const restringido=new Set(state.maestros.filter(m=>m.dias||m.tramos).map(m=>m.id));
+  const compartido=new Set(state.maestros.filter(m=>(grupos[m.id]&&grupos[m.id].size>1)||restringido.has(m.id)).map(m=>m.id));
+
+  const shared=[], tutor=[];
+  GRUPOS.forEach(g=>{
+    materiasDeEtapa(g.etapa).forEach(m=>{
+      const h=state.horas[g.id]?.[m.id]||0; if(h<=0)return;
+      if(m.rol==='religion'){
+        const r=state.religion[g.id]||{};
+        for(let n=0;n<h;n++) shared.push({kind:'rel',b:{g:g.id,cat:r.cat,ev:r.ev||null,ae:r.ae||state.tutores[g.id]||null}});
+        return;
+      }
+      const t=state.asig[g.id]?.[m.id];
+      if(compartido.has(t)){ for(let n=0;n<h;n++) shared.push({kind:'sess',x:{g:g.id,m:m.id,t}}); }
+      else { tutor.push({g:g.id,m:m.id,t,count:h}); }
+    });
+  });
+  return {shared,tutor};
+}
+
+/* =========================================================================
+   RESULTADOS · render, edición e impresión
+   ========================================================================= */
+let selCell=null;
+function setupResultsView(){
+  document.getElementById('viewSwitch').style.display='flex';
+  const mode=document.getElementById('viewMode');
+  const target=document.getElementById('viewTarget');
+  function fillTargets(){
+    if(mode.value==='grupo'){
+      target.innerHTML=GRUPOS.map(g=>`<option value="${g.id}">${g.nombre}</option>`).join('');
+    }else{
+      target.innerHTML=state.maestros.map(m=>`<option value="${m.id}">${m.nombre} · ${m.rol}</option>`).join('');
+    }
+    drawCurrent();
+  }
+  mode.onchange=fillTargets;
+  target.onchange=drawCurrent;
+  fillTargets();
+}
+function drawCurrent(){
+  const mode=document.getElementById('viewMode').value;
+  const id=document.getElementById('viewTarget').value;
+  const cont=document.getElementById('ttContainer');
+  selCell=null;
+  cont.innerHTML = mode==='grupo' ? gridGrupo(id,true) : gridMaestro(id);
+  if(mode==='grupo') bindSwap(id);
+}
+function tramoLabelRows(){
+  return tramoTimes().map(t=> t.recreo
+    ? {type:'recreo', ini:t.ini, fin:t.fin}
+    : {type:'slot', i:t.i, ini:t.ini, fin:t.fin, dur:t.dur});
+}
+function cellHTML(cell,gid,d,s,editable){
+  if(!cell) return `<td class="cell empty" ${editable?`data-c="${gid}|${d}|${s}"`:''}>·</td>`;
+  const m=MAT[cell.mat];
+  const bg=m?m.color:'#888';
+  let prof=maestroNombre(cell.prof);
+  let main=m?m.nombre:cell.mat;
+  let sub=prof;
+  if(cell.mat==='REL'&&cell.band){
+    const parts=[];
+    if(cell.band.cat)parts.push('Cat: '+maestroNombre(cell.band.cat));
+    if(cell.band.ev)parts.push('Ev: '+maestroNombre(cell.band.ev));
+    if(cell.band.ae)parts.push('AE: '+maestroNombre(cell.band.ae));
+    sub=parts.join(' · ');
+  }
+  const lock=cell.mat==='REL';
+  const style=`background:${hexA(bg,.16)};color:#1f2937;border-left:4px solid ${bg}`;
+  return `<td class="cell${lock?' lock':''}" style="${style}" ${editable&&!lock?`data-c="${gid}|${d}|${s}"`:''} title="${m?m.full:''}">
+    <div class="m">${main}</div><div class="p">${sub}</div></td>`;
+}
+function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
+function gridGrupo(gid,editable){
+  const g=GRP[gid]; const res=state.resultado[gid]; const rows=tramoLabelRows();
+  let html=`<div class="print-block"><div class="print-title">${state.centro.nombre} — Horario ${g.nombre}</div>`;
+  html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${r.ini}-${r.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
+    const durBadge=r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'';
+    html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${durBadge}</td>`;
+    DIAS.forEach((d,di)=>{ html+=cellHTML(res[di][r.i],gid,di,r.i,editable); });
+    html+='</tr>';
+  });
+  html+='</tbody></table>'+legendHTML()+'</div>';
+  return html;
+}
+function gridMaestro(mid){
+  const rows=tramoLabelRows();
+  // construir ocupación del maestro
+  const occ={};
+  const NS=numTramos();
+  GRUPOS.forEach(g=>{
+    const res=state.resultado[g.id]; if(!res)return;
+    for(let d=0;d<DIAS.length;d++)for(let s=0;s<NS;s++){
+      const c=res[d][s]; if(!c)continue;
+      let etiqueta=null;
+      if(c.mat==='REL'&&c.band){
+        if(c.band.cat===mid)etiqueta='Religión (Cat.)';
+        else if(c.band.ev===mid)etiqueta='Religión (Ev.)';
+        else if(c.band.ae===mid)etiqueta='At. Educativa';
+      } else if(c.prof===mid){ etiqueta=MAT[c.mat]?MAT[c.mat].nombre:c.mat; }
+      if(etiqueta){ occ[key(d,s)]={g:g.id,etiqueta,mat:c.mat}; }
+    }
+  });
+  const m=state.maestros.find(x=>x.id===mid);
+  let html=`<div class="print-block"><div class="print-title">${state.centro.nombre} — Horario ${m?m.nombre:''} (${m?m.rol:''})</div>`;
+  html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${r.ini}-${r.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
+    const durBadge=r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'';
+    html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${durBadge}</td>`;
+    DIAS.forEach((d,di)=>{
+      const o=occ[key(di,r.i)];
+      if(!o){html+='<td class="cell empty">libre</td>';return;}
+      const col=MAT[o.mat]?MAT[o.mat].color:'#888';
+      html+=`<td class="cell" style="background:${hexA(col,.16)};border-left:4px solid ${col}"><div class="m">${o.etiqueta}</div><div class="p">${GRP[o.g].nombre}</div></td>`;
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table></div>';
+  return html;
+}
+function legendHTML(){
+  const used=new Set();
+  Object.values(state.resultado).forEach(grid=>grid.forEach(row=>row.forEach(c=>{if(c)used.add(c.mat);})));
+  const items=[...used].map(id=>MAT[id]).filter(Boolean);
+  return '<div class="legend">'+items.map(m=>`<div class="li"><span class="sw" style="background:${m.color}"></span>${m.full}</div>`).join('')+'</div>';
+}
+function bindSwap(gid){
+  document.querySelectorAll('#ttContainer .cell[data-c]').forEach(td=>{
+    td.onclick=()=>{
+      const [g,d,s]=td.dataset.c.split('|'); const D=+d,S=+s;
+      if(!selCell){ selCell={g,d:D,s:S,node:td}; td.classList.add('sel'); return; }
+      if(selCell.node===td){ td.classList.remove('sel'); selCell=null; return; }
+      // intercambiar dentro del mismo grupo
+      trySwap(gid,selCell,{d:D,s:S});
+      if(selCell.node)selCell.node.classList.remove('sel'); selCell=null;
+    };
+  });
+}
+function trySwap(gid,a,b){
+  const res=state.resultado[gid];
+  const ca=res[a.d][a.s], cb=res[b.d][b.s];
+  // religión no se mueve a mano
+  if((ca&&ca.mat==='REL')||(cb&&cb.mat==='REL')){toast('La banda de religión no se mueve a mano (rompería las disponibilidades).','warn');return;}
+  // comprobar conflictos de maestro en las nuevas posiciones
+  if(!swapValido(gid,a,b,ca,cb)){toast('Ese cambio provocaría que un maestro coincida en dos grupos a la vez.','error');return;}
+  res[a.d][a.s]=cb; res[b.d][b.s]=ca;
+  drawCurrent();
+  toast('Sesiones intercambiadas');
+}
+function swapValido(gid,a,b,ca,cb){
+  // ca pasa a (b), cb pasa a (a). Comprobar que su maestro no esté ocupado en otro grupo en la celda destino.
+  function libre(prof,d,s,exceptGid){
+    if(!prof)return true;
+    for(const g of GRUPOS){
+      if(g.id===exceptGid)continue;
+      const c=state.resultado[g.id][d][s];
+      if(!c)continue;
+      if(c.prof===prof)return false;
+      if(c.band&&(c.band.cat===prof||c.band.ev===prof||c.band.ae===prof))return false;
+    }
+    return true;
+  }
+  // ca al destino b
+  if(ca && !libre(ca.prof,b.d,b.s,gid)) return false;
+  if(cb && !libre(cb.prof,a.d,a.s,gid)) return false;
+  return true;
+}
+function printAll(){
+  const area=document.getElementById('printArea');
+  let html='';
+  GRUPOS.forEach(g=>{ html+=gridGrupo(g.id,false); });
+  state.maestros.forEach(m=>{ html+=gridMaestro(m.id); });
+  area.innerHTML=html; area.style.display='block';
+  window.print();
+  setTimeout(()=>{area.style.display='none';area.innerHTML='';},500);
+}
+function skeletonGrid(){
+  let h='<table class="tt"><tbody>';
+  for(let i=0;i<6;i++){h+='<tr><td class="timecol"><div class="skeleton" style="height:20px"></div></td>'+DIAS.map(()=>'<td><div class="skeleton"></div></td>').join('')+'</tr>';}
+  return h+'</tbody></table>';
+}
+
+/* =========================================================================
+   GUARDAR / CARGAR / EJEMPLO
+   ========================================================================= */
+function guardar(){
+  const blob=new Blob([JSON.stringify({v:1,state},null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=(state.centro.nombre||'horarios').replace(/[^\w\-]+/g,'_')+'.json'; a.click();
+  toast('Archivo descargado');
+}
+function cargar(file){
+  const fr=new FileReader();
+  fr.onload=()=>{ try{ const data=JSON.parse(fr.result); if(!data.state)throw 0; state=data.state;
+    // recalcular uid
+    state.maestros.forEach(m=>{const n=parseInt((m.id||'m0').slice(1));if(n>=uid)uid=n+1;});
+    fillCentro(); go('horarios'); if(state.resultado){setupResultsView();} else {document.getElementById('viewSwitch').style.display='none';document.getElementById('ttContainer').innerHTML='<div class="empty-state"><p>Datos cargados. Pulsa <strong>Generar horarios</strong>.</p></div>';}
+    toast('Archivo cargado');
+  }catch(e){toast('No se pudo leer el archivo','error');} };
+  fr.readAsText(file);
+}
+function cargarEjemplo(){
+  state=freshState();
+  const M=(nombre,rol,dias=null,tramos=null)=>{const m={id:nid(),nombre,rol,dias,tramos};state.maestros.push(m);return m.id;};
+  const tInf3=M('Marina','Infantil'), tInf4=M('Rosa','Infantil'), tInf5=M('Belén','Infantil');
+  const t1=M('Lucía','Tutor/a'), t2=M('Carlos','Tutor/a'), t3=M('Elena','Tutor/a'),
+        t4=M('Javier','Tutor/a'), t5=M('Marta','Tutor/a'), t6=M('Diego','Tutor/a');
+  const ing=M('Sara','Inglés');                       // una sola para toda Primaria e Infantil
+  const ef=M('Andrés','Educación Física');
+  const mus=M('Nuria','Música');                      // única que da Música en todo el centro
+  const fra=M('Claire','Francés');
+  const cmBajo=M('Rocío','Conoc. Medio (bilingüe)');  // 1º · 2º · 3º
+  const cmAlto=M('Inma','Conoc. Medio (bilingüe)');   // 4º · 5º · 6º
+  const cat=M('Pilar','Religión Católica',['L','M','J']);
+  const ev=M('Raquel','Religión Evangélica',['M']);
+  state.tutores={INF3:tInf3,INF4:tInf4,INF5:tInf5,'1':t1,'2':t2,'3':t3,'4':t4,'5':t5,'6':t6};
+  GRUPOS.forEach(g=>{
+    state.asig[g.id]={};
+    materiasDeEtapa(g.etapa).forEach(m=>{
+      if(m.rol==='religion')return;
+      if((state.horas[g.id]?.[m.id]||0)<=0)return;
+      let t=state.tutores[g.id];                       // por defecto la tutora (Lengua, Mate, Autonomía, Plástica, LCA, Psicomotricidad)
+      if(m.id==='ING') t=ing;
+      else if(m.id==='EF') t=ef;
+      else if(m.id==='FRA') t=fra;
+      else if(m.id==='MUS') t=mus;
+      else if(m.id==='CMED') t=(['4','5','6'].includes(g.id))?cmAlto:cmBajo;
+      state.asig[g.id][m.id]=t;
+    });
+    const upper=['4','5','6'].includes(g.id);
+    state.religion[g.id]={cat,ev:upper?ev:'',ae:state.tutores[g.id]};
+  });
+  fillCentro(); renderMaestros(); renderAsig(); renderRel();
+  go('horarios');
+  document.getElementById('viewSwitch').style.display='none';
+  document.getElementById('ttContainer').innerHTML='<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 4v17"/></svg><p>Claustro de ejemplo cargado (17 maestros). Pulsa <strong>Generar horarios</strong>.</p></div>';
+  toast('Ejemplo cargado: 17 maestros, 9 grupos');
+}
+
+/* =========================================================================
+   ARRANQUE
+   ========================================================================= */
+function init(){
+  state=freshState();
+  renderTabs(); bindCentro(); fillCentro();
+  document.getElementById('btnAddMaestro').onclick=()=>openMaestro(null);
+  document.getElementById('mSave').onclick=saveMaestro;
+  document.getElementById('mCancel').onclick=closeModal;
+  document.getElementById('mOverlay').onclick=e=>{if(e.target.id==='mOverlay')closeModal();};
+  document.getElementById('btnGenerar').onclick=generar;
+  document.getElementById('btnPrint').onclick=()=>window.print();
+  document.getElementById('btnPrintAll').onclick=printAll;
+  document.getElementById('btnSave').onclick=guardar;
+  document.getElementById('btnLoad').onclick=()=>document.getElementById('fileInput').click();
+  document.getElementById('fileInput').onchange=e=>{if(e.target.files[0])cargar(e.target.files[0]);e.target.value='';};
+  document.getElementById('btnEjemplo').onclick=cargarEjemplo;
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+  go('centro');
+}
+init();
+
+// PWA service worker (funciona en GitHub Pages; en sandbox simplemente se ignora)
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});
+}
+</script>
+</body>
+</html>
