@@ -351,7 +351,7 @@ const MATERIAS = [
   {id:'FRA', nombre:'Francés',       full:'2ª Lengua Extranjera (Francés)', color:'#db2777', etapas:['PRI'], rol:'spec'},
   {id:'ART', nombre:'Plástica',     full:'Educación Plástica y Visual',     color:'#d97706', etapas:['PRI'], rol:'core'},
   {id:'MUS', nombre:'Música',        full:'Música',                         color:'#c026d3', etapas:['PRI'], rol:'spec'},
-  {id:'LCA', nombre:'Libre Config.', full:'Libre Configuración Autonómica', color:'#0891b2', etapas:['PRI'], rol:'core'},
+  {id:'VAL', nombre:'Valores Cívicos',full:'Educación en Valores Cívicos y Éticos', color:'#0891b2', etapas:['PRI'], rol:'core'},
   {id:'AUT', nombre:'Autonomía',     full:'Autonomía del centro / Refuerzo',color:'#65a30d', etapas:['PRI'], rol:'core'},
   {id:'GLO', nombre:'Globalizada',   full:'Globalizada / Tutoría (Infantil)',color:'#0ea5e9',etapas:['INF'], rol:'core'},
   {id:'PSI', nombre:'Psicomotric.',  full:'Psicomotricidad (Infantil)',     color:'#f59e0b', etapas:['INF'], rol:'core'},
@@ -372,34 +372,23 @@ const GRUPOS = [
 ];
 const GRP = Object.fromEntries(GRUPOS.map(g=>[g.id,g]));
 
-// Reparto para jornada de 45' (6 sesiones/día · 30/semana) — Anexo II
-const HORAS_45 = {
-  '1':{LEN:6,MAT:6,CMED:4,ING:2,EF:2,ART:1,MUS:1,AUT:7,REL:1},
-  '2':{LEN:6,MAT:6,CMED:4,ING:2,EF:2,ART:1,MUS:1,AUT:7,REL:1},
-  '3':{LEN:6,MAT:5,CMED:4,ING:3,EF:2,ART:1,MUS:1,AUT:7,REL:1},
-  '4':{LEN:6,MAT:5,CMED:4,ING:3,EF:2,ART:1,MUS:1,AUT:7,REL:1},
-  '5':{LEN:5,MAT:5,CMED:4,ING:3,EF:2,FRA:1,ART:1,MUS:1,LCA:2,AUT:5,REL:1},
-  '6':{LEN:5,MAT:5,CMED:4,ING:3,EF:2,FRA:1,ART:1,MUS:1,LCA:2,AUT:5,REL:1},
-  'INF3':{GLO:26,PSI:2,ING:1,REL:1},
-  'INF4':{GLO:26,PSI:2,ING:1,REL:1},
-  'INF5':{GLO:26,PSI:2,ING:1,REL:1},
-};
-// Reparto orientativo para jornada de 60' (5 sesiones/día · 25/semana, última de 30')
-const HORAS_60 = {
-  '1':{LEN:5,MAT:5,CMED:4,ING:2,EF:2,ART:1,MUS:1,AUT:4,REL:1},
-  '2':{LEN:5,MAT:5,CMED:4,ING:2,EF:2,ART:1,MUS:1,AUT:4,REL:1},
-  '3':{LEN:5,MAT:4,CMED:4,ING:3,EF:2,ART:1,MUS:1,AUT:4,REL:1},
-  '4':{LEN:5,MAT:4,CMED:4,ING:3,EF:2,ART:1,MUS:1,AUT:4,REL:1},
-  '5':{LEN:4,MAT:4,CMED:4,ING:3,EF:2,FRA:1,ART:1,MUS:1,LCA:2,AUT:2,REL:1},
-  '6':{LEN:4,MAT:4,CMED:4,ING:3,EF:2,FRA:1,ART:1,MUS:1,LCA:2,AUT:2,REL:1},
-  'INF3':{GLO:21,PSI:2,ING:1,REL:1},
-  'INF4':{GLO:21,PSI:2,ING:1,REL:1},
-  'INF5':{GLO:21,PSI:2,ING:1,REL:1},
+// Reparto OFICIAL curso 25/26 (LOMLOE Andalucía) en tramos de 30 min (= horas semanales × 2).
+// Jornada de 9 tramos de 30'/día · 45/semana (la primera hora 9:00-10:00 se muestra unida = 2 tramos).
+// Religión / AE = 1,5h (3 tramos), en banda paralela (Católica + Evangélica + Atención Educativa).
+const HORAS_30 = {
+  '1':{LEN:10,MAT:10,CMED:5,ING:5,EF:6,ART:2,MUS:2,AUT:2,REL:3},
+  '2':{LEN:10,MAT:10,CMED:5,ING:5,EF:6,ART:1,MUS:2,AUT:3,REL:3},
+  '3':{LEN:10,MAT:10,CMED:5,ING:5,EF:6,ART:2,MUS:2,AUT:2,REL:3},
+  '4':{LEN:10,MAT:10,CMED:5,ING:5,EF:6,ART:1,MUS:2,AUT:3,REL:3},
+  '5':{LEN:9,MAT:9,CMED:5,ING:5,EF:6,FRA:2,ART:2,MUS:2,AUT:2,REL:3},
+  '6':{LEN:8,MAT:8,CMED:5,ING:5,EF:6,FRA:2,ART:1,MUS:2,VAL:3,AUT:2,REL:3},
+  'INF3':{GLO:36,PSI:4,ING:2,REL:3},
+  'INF4':{GLO:36,PSI:4,ING:2,REL:3},
+  'INF5':{GLO:36,PSI:4,ING:2,REL:3},
 };
 // elige el reparto sugerido según nº de sesiones lectivas/semana
 function presetHoras(slotsSemana){
-  if(slotsSemana===25) return HORAS_60;
-  if(slotsSemana===30) return HORAS_45;
+  if(slotsSemana===45) return HORAS_30;
   return null;
 }
 
@@ -409,8 +398,8 @@ function presetHoras(slotsSemana){
 let state = null;
 function freshState(){
   return {
-    centro:{nombre:'CEIP Capitulaciones de Santa Fe', inicio:'09:00', fin:'14:00', dur:60, recreoIni:'12:00', recreoFin:'12:30', tramo30Ini:'', tramo30Fin:''},
-    horas: JSON.parse(JSON.stringify(HORAS_60)),
+    centro:{nombre:'CEIP Capitulaciones de Santa Fe', inicio:'09:00', fin:'14:00', dur:30, recreoIni:'12:00', recreoFin:'12:30', tramo30Ini:'', tramo30Fin:''},
+    horas: JSON.parse(JSON.stringify(HORAS_30)),
     maestros: [],        // {id,nombre,rol,dias:[...]|null, tramos:[...]|null}
     tutores: {},         // grupoId -> maestroId
     asig: {},            // grupoId -> {materiaId -> maestroId}
@@ -465,6 +454,25 @@ function numTramos(){return lectivos().length;}
 function fmt(min){const h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function maestroNombre(id){const m=state.maestros.find(x=>x.id===id);return m?m.nombre:'—';}
 function slotsSemana(){return numTramos()*DIAS.length;}
+// Filas visuales del horario: une los tramos de la primera hora (9:00-10:00) en una sola fila de 60'.
+// El motor sigue trabajando en tramos de 30; esto solo afecta a cómo se MUESTRA.
+function filasVista(gid,noMerge){
+  const tt=tramoTimes();
+  const ini=toMin(state.centro.inicio);
+  const lect=tt.filter(t=>!t.recreo);
+  const prim=lect.filter(t=> toMin(t.ini) < ini+60).map(t=>t.i); // tramos dentro de la 1ª hora
+  const merge = prim.length>=2 && !noMerge;
+  const first=merge?lect.find(x=>x.i===prim[0]):null;
+  const last=merge?lect.find(x=>x.i===prim[prim.length-1]):null;
+  const out=[];
+  tt.forEach(t=>{
+    if(t.recreo){ out.push({type:'recreo',ini:t.ini,fin:t.fin}); return; }
+    if(merge && t.i===prim[0]) out.push({type:'slot', i:prim[0], i2:prim[1], ini:first.ini, fin:last.fin, dur:60, primera:true});
+    else if(merge && prim.indexOf(t.i)>=0) {/* tramo absorbido en la 1ª hora */}
+    else out.push({type:'slot', i:t.i, ini:t.ini, fin:t.fin, dur:t.dur, primera:false});
+  });
+  return out;
+}
 
 /* =========================================================================
    NAVEGACIÓN
@@ -544,9 +552,9 @@ function previewTramos(){
 function renderPlantillaVacia(){
   const cont=document.getElementById('plantillaVacia'); if(!cont)return;
   let html='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
-  tramoTimes().forEach(t=>{
-    if(t.recreo){html+=`<tr><td class="timecol">Recreo<br>${t.ini}-${t.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const badge=t.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${t.dur}′</span>`:'';
+  filasVista().forEach(t=>{
+    if(t.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${t.ini}-${t.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
+    const badge=t.primera?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(t.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${t.dur}′</span>`:'');
     html+=`<tr><td class="timecol">${t.ini}<br>${t.fin}${badge}</td>${DIAS.map(()=>'<td class="cell empty">·</td>').join('')}</tr>`;
   });
   html+='</tbody></table>';
@@ -799,12 +807,20 @@ function buildEngineState(){
     dias.forEach(d=>{const di=DIAS.indexOf(d); tramos.forEach(t=>set.add(key(di,t)));});
     avail[m.id]=set;
   });
-  return {ND,NS,grid,busy:{},avail};
+  return {ND,NS,grid,busy:{},avail,segs:segmentos()};
+}
+// segmentos = rangos de tramos lectivos contiguos separados por el recreo (un bloque no cruza el recreo)
+function segmentos(){
+  const segs=[]; let cur=[];
+  tramoTimes().forEach(t=>{ if(t.recreo){ if(cur.length){segs.push(cur);cur=[];} } else cur.push(t.i); });
+  if(cur.length) segs.push(cur);
+  return segs;
 }
 function isAvail(es,t,d,s){const a=es.avail[t];return !a||a.has(key(d,s));}
 function tBusy(es,t,d,s){return es.busy[t]&&es.busy[t].has(key(d,s));}
 function gBusy(es,g,d,s){return es.grid[g][d][s]!=null;}
 function occ(es,t,d,s,v){if(!es.busy[t])es.busy[t]=new Set();const k=key(d,s);v?es.busy[t].add(k):es.busy[t].delete(k);}
+function segOf(es,s){for(const seg of es.segs){if(seg.indexOf(s)>=0)return seg;}return [s];}
 
 function relDomain(es,b){const dom=[];for(let d=0;d<es.ND;d++)for(let s=0;s<es.NS;s++){
   if(gBusy(es,b.g,d,s))continue;
@@ -821,13 +837,67 @@ function sessPlace(es,x,c){es.grid[x.g][c.d][c.s]={mat:x.m,prof:x.t};occ(es,x.t,
 function sessUnplace(es,x,c){es.grid[x.g][c.d][c.s]=null;occ(es,x.t,c.d,c.s,0);}
 
 function softScore(es,x,c){
-  let sc=0; const m=x.m;
-  if(m==='LEN'||m==='GLO') sc+=(es.NS-c.s)*3;      // lengua/globalizada a primeras horas
-  if(m==='MAT'){ sc+=(es.NS-c.s)*2; if(c.s>=1)sc+=2; } // mates pronto, tras la primera
-  if(['ING','EF','FRA','ART','PSI'].includes(m)) sc+=c.s*1.2; // dejar las primeras horas a Lengua/Mates
-  // penalizar misma materia el mismo día
-  for(let s=0;s<es.NS;s++){const cc=es.grid[x.g][c.d][s];if(cc&&cc.mat===m)sc-=10;}
+  let sc=0; const m=x.m, d=c.d, s=c.s;
+  if(m==='LEN'||m==='GLO') sc+=(es.NS-s)*2;          // lengua/globalizada a primeras horas
+  if(m==='MAT') sc+=(es.NS-s)*1.5;                    // mates pronto
+  if(['ING','EF','FRA','ART','MUS','PSI'].includes(m)) sc+=s*0.8; // primeras horas para Lengua/Mates
+  // adyacencia: forma bloques de 1h (dos tramos seguidos misma materia, sin cruzar el recreo)
+  const seg=segOf(es,s); let sameDay=0, adj=false;
+  for(const ss of seg){ const cc=es.grid[x.g][d][ss]; if(cc&&cc.mat===m){ sameDay++; if(Math.abs(ss-s)===1) adj=true; } }
+  if(adj) sc+=6;            // pegar para formar bloque de 1h
+  if(sameDay>=2) sc-=12;    // no más de un bloque (1h) de esa materia al día
+  // PRIMERA HORA (tramos 0-1): cerrarla con la misma materia (bloque de 60')
+  if(s===0){ const c1=es.grid[x.g][d][1]; if(c1&&c1.mat===m) sc+=22; }
+  if(s===1){ const c0=es.grid[x.g][d][0]; if(c0&&c0.mat===m) sc+=22; else if(c0&&c0.mat!==m) sc-=4; }
   return sc;
+}
+// Garantiza que la primera hora (tramos 0 y 1) sea la misma materia/profesor en cada grupo y día,
+// mediante intercambios válidos dentro del mismo día (sin crear solapes). No toca la religión.
+function profLibre(es,p,d,s){return p&&!tBusy(es,p,d,s)&&isAvail(es,p,d,s);}
+function swapPH(es,g,d,a,b){
+  const A=es.grid[g][d][a], B=es.grid[g][d][b];
+  if(A)occ(es,A.prof,d,a,0); if(B)occ(es,B.prof,d,b,0);
+  es.grid[g][d][a]=B; es.grid[g][d][b]=A;
+  if(B)occ(es,B.prof,d,a,1); if(A)occ(es,A.prof,d,b,1);
+}
+function swapValido(es,g,d,a,b){
+  const A=es.grid[g][d][a], B=es.grid[g][d][b];
+  if((A&&A.band)||(B&&B.band))return false;
+  if(A && !((B&&B.prof===A.prof)||profLibre(es,A.prof,d,b))) return false;
+  if(B && !((A&&A.prof===B.prof)||profLibre(es,B.prof,d,a))) return false;
+  return true;
+}
+function meterBloqueEnPrimera(es,g,d){
+  // mete en los tramos 0 y 1 una materia (no religión) que tenga >=2 sesiones ese día
+  const byMat={};
+  for(let s=2;s<es.NS;s++){const c=es.grid[g][d][s]; if(!c||c.band)continue; const k=c.mat+'|'+c.prof; (byMat[k]=byMat[k]||[]).push(s);}
+  for(const k in byMat){ const arr=byMat[k]; if(arr.length<2)continue; const p1=arr[0],p2=arr[1];
+    if(swapValido(es,g,d,0,p1)){ swapPH(es,g,d,0,p1);
+      if(swapValido(es,g,d,1,p2)){ swapPH(es,g,d,1,p2); return true; }
+      swapPH(es,g,d,0,p1); // deshacer
+    }
+  }
+  return false;
+}
+function unirPrimeraHora(es){
+  for(const G of GRUPOS){ const g=G.id;
+    for(let d=0;d<es.ND;d++){
+      const c0=es.grid[g][d][0], c1=es.grid[g][d][1];
+      if(!c0||!c1||c0.band||c1.band) continue;
+      if(c0.mat===c1.mat && c0.prof===c1.prof) continue;
+      let done=false;
+      // 1) traer al tramo 1 una celda igual al tramo 0
+      for(let t=2;t<es.NS&&!done;t++){ const ct=es.grid[g][d][t]; if(!ct||ct.band)continue;
+        if(ct.mat===c0.mat&&ct.prof===c0.prof && profLibre(es,c1.prof,d,t)&&profLibre(es,ct.prof,d,1)){ swapPH(es,g,d,1,t); done=true; }
+      }
+      // 2) traer al tramo 0 una celda igual al tramo 1
+      for(let t=2;t<es.NS&&!done;t++){ const ct=es.grid[g][d][t]; if(!ct||ct.band)continue;
+        if(ct.mat===c1.mat&&ct.prof===c1.prof && profLibre(es,c0.prof,d,t)&&profLibre(es,ct.prof,d,0)){ swapPH(es,g,d,0,t); done=true; }
+      }
+      // 3) meter en 0 y 1 cualquier materia con >=2 sesiones ese día
+      if(!done) meterBloqueEnPrimera(es,g,d);
+    }
+  }
 }
 function solveShared(es,tasks,rnd,deadline){
   function dom(t){return t.kind==='rel'?relDomain(es,t.b):sessDomain(es,t.x);}
@@ -894,7 +964,7 @@ function runEngine(btn){
   const tasksBase=buildTasks();
   let ok=false, es=null, attempts=0;
   const t0=performance.now();
-  for(let seed=1;seed<=60 && !ok;seed++){
+  for(let seed=1;seed<=80 && !ok;seed++){
     attempts++;
     es=buildEngineState();
     const rnd=mulberry32(seed*7919+13);
@@ -914,6 +984,7 @@ function runEngine(btn){
     return;
   }
   // volcar a state.resultado
+  unirPrimeraHora(es);
   state.resultado={};
   GRUPOS.forEach(g=>state.resultado[g.id]=es.grid[g.id]);
   let libres=0; const NS=numTramos();
@@ -923,14 +994,15 @@ function runEngine(btn){
     `<div class="notice ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Horarios generados sin solapamientos en ${ms} ms (${attempts} ${attempts===1?'intento':'intentos'}).${notaLibres} Puedes ajustarlos a mano pulsando dos celdas para intercambiarlas.</div>`;
   setupResultsView();
 }
-function buildTasks(){
-  // determinar maestros "compartidos" (en >1 grupo o con disponibilidad restringida)
-  const grupos={}; // maestroId -> set grupos
+function buildTasks(horas){
+  horas = horas || state.horas;
+  // maestros "compartidos" (en >1 grupo o con disponibilidad restringida) → backtracking; el resto, voraz
+  const grupos={};
   function reg(t,g){if(!t)return;(grupos[t]=grupos[t]||new Set()).add(g);}
   GRUPOS.forEach(g=>{
     materiasDeEtapa(g.etapa).forEach(m=>{
       if(m.rol==='religion')return;
-      if((state.horas[g.id]?.[m.id]||0)>0) reg(state.asig[g.id]?.[m.id],g.id);
+      if((horas[g.id]?.[m.id]||0)>0) reg(state.asig[g.id]?.[m.id],g.id);
     });
   });
   const restringido=new Set(state.maestros.filter(m=>m.dias||m.tramos).map(m=>m.id));
@@ -939,7 +1011,7 @@ function buildTasks(){
   const shared=[], tutor=[];
   GRUPOS.forEach(g=>{
     materiasDeEtapa(g.etapa).forEach(m=>{
-      const h=state.horas[g.id]?.[m.id]||0; if(h<=0)return;
+      const h=horas[g.id]?.[m.id]||0; if(h<=0)return;
       if(m.rol==='religion'){
         const r=state.religion[g.id]||{};
         for(let n=0;n<h;n++) shared.push({kind:'rel',b:{g:g.id,cat:r.cat,ev:r.ev||null,ae:r.ae||state.tutores[g.id]||null}});
@@ -991,11 +1063,6 @@ function drawCurrent(){
   cont.innerHTML = mode==='grupo' ? gridGrupo(id,true) : gridMaestro(id);
   if(mode==='grupo') bindSwap(id);
 }
-function tramoLabelRows(){
-  return tramoTimes().map(t=> t.recreo
-    ? {type:'recreo', ini:t.ini, fin:t.fin}
-    : {type:'slot', i:t.i, ini:t.ini, fin:t.fin, dur:t.dur});
-}
 function cellHTML(cell,gid,d,s,editable){
   if(!cell) return `<td class="cell empty" ${editable?`data-c="${gid}|${d}|${s}"`:''}>libre</td>`;
   const m=MAT[cell.mat];
@@ -1016,22 +1083,49 @@ function cellHTML(cell,gid,d,s,editable){
     <div class="m">${main}</div><div class="p">${sub}</div></td>`;
 }
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
+// Celda de la PRIMERA HORA (9:00-10:00). Si las dos medias horas coinciden → una sola celda de 1h.
+// Si difieren (p. ej. media hora de religión) → se apilan dentro de la misma franja, sin perder datos.
+function celdaPrimera(res,gid,di){
+  const a=res[di][0], b=res[di][1];
+  const same = (!a&&!b) || (a&&b&&a.mat===b.mat&&a.prof===b.prof &&
+      JSON.stringify(a.band||0)===JSON.stringify(b.band||0));
+  if(same) return cellHTML(a,gid,di,0,false);
+  return `<td class="cell" style="padding:0;vertical-align:stretch">`
+    + `<div style="border-bottom:1px solid var(--color-border)">${miniCelda(a)}</div>`
+    + `<div>${miniCelda(b)}</div></td>`;
+}
+function miniCelda(c){
+  if(!c) return `<div style="padding:4px 7px;color:var(--color-text-muted);font-size:.8em">libre</div>`;
+  const m=MAT[c.mat]; const bg=m?m.color:'#888';
+  let sub=maestroNombre(c.prof);
+  if(c.mat==='REL'&&c.band){ const p=[];
+    if(c.band.cat)p.push('Cat: '+maestroNombre(c.band.cat));
+    if(c.band.ev)p.push('Ev: '+maestroNombre(c.band.ev));
+    if(c.band.ae)p.push('AE: '+maestroNombre(c.band.ae));
+    sub=p.join(' · '); }
+  return `<div style="padding:4px 7px;border-left:4px solid ${bg};background:${hexA(bg,.16)}">`
+    + `<div class="m" style="font-size:.85em;line-height:1.2">${m?m.nombre:c.mat}</div>`
+    + `<div class="p" style="font-size:.76em">${sub}</div></div>`;
+}
 function gridGrupo(gid,editable){
-  const g=GRP[gid]; const res=state.resultado[gid]; const rows=tramoLabelRows();
+  const g=GRP[gid]; const res=state.resultado[gid]; const rows=filasVista(gid);
   let html=`<div class="print-block"><div class="print-title">${state.centro.nombre} — Horario ${g.nombre}</div>`;
   html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${r.ini}-${r.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const durBadge=r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'';
+    const durBadge=r.primera?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'');
     html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${durBadge}</td>`;
-    DIAS.forEach((d,di)=>{ html+=cellHTML(res[di][r.i],gid,di,r.i,editable); });
+    DIAS.forEach((d,di)=>{
+      if(r.primera){ html+=celdaPrimera(res,gid,di); }
+      else html+=cellHTML(res[di][r.i],gid,di,r.i,editable&&!r.primera);
+    });
     html+='</tr>';
   });
   html+='</tbody></table>'+legendHTML()+'</div>';
   return html;
 }
 function gridMaestro(mid){
-  const rows=tramoLabelRows();
+  const rows=filasVista(null,true);
   // construir ocupación del maestro
   const occ={};
   const NS=numTramos();
@@ -1053,7 +1147,7 @@ function gridMaestro(mid){
   html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${r.ini}-${r.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const durBadge=r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'';
+    const durBadge=r.primera?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'');
     html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${durBadge}</td>`;
     DIAS.forEach((d,di)=>{
       const o=occ[key(di,r.i)];
@@ -1142,7 +1236,8 @@ function buildPromptIA(){
   L.push('Centro: '+(c.nombre||'(sin nombre)'));
   L.push('Días lectivos: Lunes a Viernes (mismo horario todos los días).');
   L.push('Franjas horarias diarias:');
-  tramoTimes().forEach(t=>{ L.push(t.recreo ? '  · RECREO '+t.ini+'–'+t.fin : '  · '+t.ini+'–'+t.fin+' ('+t.dur+' min)'); });
+  filasVista().forEach(t=>{ L.push(t.type==='recreo' ? '  · RECREO '+t.ini+'–'+t.fin : '  · '+t.ini+'–'+t.fin+' ('+(t.primera?'60':t.dur)+' min)'); });
+  L.push('La PRIMERA HORA (9:00–10:00) es una única sesión de 60 minutos; el resto son sesiones de 30 minutos.');
   L.push('Sesiones lectivas por día: '+numTramos()+' ('+slotsSemana()+' por grupo a la semana).');
   L.push('');
   L.push('=== GRUPOS (1 línea) ===');
