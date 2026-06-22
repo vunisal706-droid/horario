@@ -171,7 +171,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 4v17M3 14h18"/></svg>
     </div>
     <div class="title">
-      <h1>Cuadra Horarios</h1>
+      <h1>Cuadra Horarios <span style="font-size:.5em;font-weight:600;color:#dc2626;background:#fee2e2;padding:2px 7px;border-radius:10px;vertical-align:middle">v12</span></h1>
       <p id="centroLabel">Infantil y Primaria · Andalucía</p>
     </div>
     <div class="head-actions">
@@ -189,7 +189,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
   <section class="panel" data-panel="centro">
     <div class="card">
       <h2>1 · Datos del centro y franjas horarias</h2>
-      <p class="sub">Define la jornada. Por defecto: de 9:00 a 14:00 con sesiones de 60 min y recreo de 12:00 a 12:30 (la última franja queda de 30 min). Puedes cambiar la duración a 45 min si tu centro trabaja así.</p>
+      <p class="sub">Define la jornada. Por defecto: de 9:00 a 14:00, con la <strong>primera hora (9:00–10:00) de 60 min</strong> y el resto en franjas de 30 min, recreo de 12:00 a 12:30. Así el cómputo encaja con el reparto oficial en horas y medias horas.</p>
       <div class="grid2">
         <div class="field"><label for="cNombre">Nombre del centro</label><input type="text" id="cNombre"></div>
         <div class="field"><label for="cInicio">Hora de inicio</label><input type="time" id="cInicio"></div>
@@ -215,7 +215,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
   <section class="panel" data-panel="materias">
     <div class="card">
       <h2>2 · Reparto de horas por materia</h2>
-      <p class="sub">Sesiones semanales de cada materia por curso. Edítalo libremente. La <strong>Autonomía del centro</strong> son sesiones a tu criterio (refuerzo, ampliar troncales…). No hace falta llegar al máximo de la semana: si pones menos, esas franjas quedarán <strong>libres</strong> en el horario (recreo, coordinaciones, reducciones…). Solo se marca en rojo si te <strong>pasas</strong> del máximo, porque entonces no caben.</p>
+      <p class="sub"><strong>Horas semanales</strong> de cada materia por curso (en horas, con medias: 0,5 / 1 / 1,5 / 2 / 2,5…). Es el reparto oficial 25/26 de Andalucía; edítalo si lo necesitas. La <strong>Autonomía del centro</strong> son horas a tu criterio (refuerzo, ampliar troncales…). No hace falta llegar al total lectivo (22,5 h): si pones menos, esas franjas quedarán <strong>libres</strong> en el horario (coordinaciones, reducciones…). Solo se marca en rojo si te <strong>pasas</strong>, porque entonces no caben.</p>
       <div class="tbl-wrap"><table id="horasTable"></table></div>
     </div>
   </section>
@@ -256,7 +256,8 @@ tbody tr:nth-child(even){background:#fcfcfd}
   <section class="panel" data-panel="horarios">
     <div class="card">
       <div class="tt-toolbar">
-        <button class="btn btn-primary" id="btnGenerar">⚙ Generar horarios</button>
+        <button class="btn btn-primary" id="btnViabilidad">🔍 Comprobar viabilidad</button>
+        <button class="btn" id="btnGenerar">⚙ Generar horarios</button>
         <button class="btn" id="btnIA">🤖 Generar con IA (Claude)</button>
         <div class="inline" id="viewSwitch" style="display:none">
           <label style="margin:0">Ver:</label>
@@ -328,6 +329,10 @@ tbody tr:nth-child(even){background:#fcfcfd}
     </div>
     <div class="field"><label>Días que viene al centro</label><div class="daychips" id="mDias"></div></div>
     <div class="field"><label>Tramos disponibles (si no marcas ninguno = todos)</label><div class="daychips" id="mTramos"></div></div>
+    <div class="field"><label for="mReduccion">Horas no lectivas / reducción (h&nbsp;por&nbsp;semana)</label>
+      <input type="number" id="mReduccion" min="0" max="22.5" step="0.5" value="0">
+      <div class="small muted" style="margin-top:4px">Función directiva, mayor de 55, coordinaciones, biblioteca… Se descuentan de sus horas disponibles para dar clase.</div>
+    </div>
     <div class="inline" style="justify-content:flex-end;margin-top:8px">
       <button class="btn btn-ghost" id="mCancel">Cancelar</button>
       <button class="btn btn-primary" id="mSave">Guardar</button>
@@ -398,7 +403,7 @@ function presetHoras(slotsSemana){
 let state = null;
 function freshState(){
   return {
-    centro:{nombre:'CEIP Capitulaciones de Santa Fe', inicio:'09:00', fin:'14:00', dur:30, recreoIni:'12:00', recreoFin:'12:30', tramo30Ini:'', tramo30Fin:''},
+    centro:{nombre:'CEIP Capitulaciones de Santa Fe', inicio:'09:00', fin:'14:00', dur:30, recreoIni:'12:00', recreoFin:'12:30', tramo30Ini:'', tramo30Fin:'', bloque60Ini:true, bloque60Fin:true},
     horas: JSON.parse(JSON.stringify(HORAS_30)),
     maestros: [],        // {id,nombre,rol,dias:[...]|null, tramos:[...]|null}
     tutores: {},         // grupoId -> maestroId
@@ -434,42 +439,31 @@ function durEn(cur){
 function tramoTimes(){
   const c=state.centro;
   const ini=toMin(c.inicio), fin=toMin(c.fin), rIni=toMin(c.recreoIni), rFin=toMin(c.recreoFin);
-  const out=[]; let cur=ini, recreoPuesto=false, idx=0, guard=0;
   const tieneRecreo=(rFin>rIni && rIni>=ini && rFin<=fin);
-  const a30=c.tramo30Ini?toMin(c.tramo30Ini):null, b30=c.tramo30Fin?toMin(c.tramo30Fin):null;
-  while(cur<fin-0.001 && guard++<80){
-    if(tieneRecreo && !recreoPuesto && cur>=rIni){ out.push({recreo:true, ini:fmt(rIni), fin:fmt(rFin)}); cur=rFin; recreoPuesto=true; continue; }
-    let end=cur+durEn(cur);
-    if(a30!=null){ if(cur<a30 && end>a30) end=a30; if(cur>=a30 && cur<b30 && end>b30) end=b30; } // no cruzar límites de la franja de 30'
-    if(tieneRecreo && !recreoPuesto && end>rIni) end=rIni; // no cruzar el recreo
-    if(end>fin) end=fin;
-    if(end<=cur) break;
-    out.push({i:idx++, ini:fmt(cur), fin:fmt(end), dur:end-cur});
-    cur=end;
-  }
+  const h1=c.bloque60Ini!==false, h2=c.bloque60Fin!==false;   // 1ª y última hora en bloque de 60 indivisible
+  const out=[]; let idx=0;
+  function llenar(desde,hasta,p60,u60){ let cur=desde;
+    if(p60 && hasta-cur>=60){ out.push({i:idx++,ini:fmt(cur),fin:fmt(cur+60),dur:60,w:2}); cur+=60; }
+    const lim=(u60 && hasta-cur>=60)?hasta-60:hasta;
+    while(cur<lim-0.001){ const e=Math.min(cur+30,lim); out.push({i:idx++,ini:fmt(cur),fin:fmt(e),dur:e-cur,w:(e-cur)/30}); cur=e; }
+    if(u60 && hasta-cur>=60){ out.push({i:idx++,ini:fmt(cur),fin:fmt(cur+60),dur:60,w:2}); cur+=60; } }
+  if(tieneRecreo){ llenar(ini,rIni,h1,false); out.push({recreo:true,ini:fmt(rIni),fin:fmt(rFin)}); llenar(rFin,fin,false,h2); }
+  else llenar(ini,fin,h1,h2);
   return out;
 }
+function pesosSlot(){ return lectivos().map(t=>t.w||1); }
 function lectivos(){return tramoTimes().filter(t=>!t.recreo);}
 function numTramos(){return lectivos().length;}
 function fmt(min){const h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function maestroNombre(id){const m=state.maestros.find(x=>x.id===id);return m?m.nombre:'—';}
-function slotsSemana(){return numTramos()*DIAS.length;}
-// Filas visuales del horario: une los tramos de la primera hora (9:00-10:00) en una sola fila de 60'.
-// El motor sigue trabajando en tramos de 30; esto solo afecta a cómo se MUESTRA.
+function slotsSemana(){return pesosSlot().reduce((a,b)=>a+b,0)*DIAS.length;}  // peso total = medias horas/semana (45 = 22,5 h)
+// Filas visuales del horario. Con la rejilla nueva, cada slot YA es su franja real
+// (9:00-10:00 y 13:00-14:00 son bloques de 60 indivisibles; el resto de 30). No hay que fusionar nada.
 function filasVista(gid,noMerge){
-  const tt=tramoTimes();
-  const ini=toMin(state.centro.inicio);
-  const lect=tt.filter(t=>!t.recreo);
-  const prim=lect.filter(t=> toMin(t.ini) < ini+60).map(t=>t.i); // tramos dentro de la 1ª hora
-  const merge = prim.length>=2 && !noMerge;
-  const first=merge?lect.find(x=>x.i===prim[0]):null;
-  const last=merge?lect.find(x=>x.i===prim[prim.length-1]):null;
   const out=[];
-  tt.forEach(t=>{
+  tramoTimes().forEach(t=>{
     if(t.recreo){ out.push({type:'recreo',ini:t.ini,fin:t.fin}); return; }
-    if(merge && t.i===prim[0]) out.push({type:'slot', i:prim[0], i2:prim[1], ini:first.ini, fin:last.fin, dur:60, primera:true});
-    else if(merge && prim.indexOf(t.i)>=0) {/* tramo absorbido en la 1ª hora */}
-    else out.push({type:'slot', i:t.i, ini:t.ini, fin:t.fin, dur:t.dur, primera:false});
+    out.push({type:'slot', i:t.i, i2:t.i, ini:t.ini, fin:t.fin, dur:t.dur, primera:(t.dur>=60)});
   });
   return out;
 }
@@ -538,13 +532,14 @@ function previewTramos(){
   const partes=tramoTimes().map(t=> t.recreo
       ? `<span style="color:#9a3412">▮ recreo ${t.ini}-${t.fin}</span>`
       : `${t.ini}-${t.fin}${t.dur<state.centro.dur?` <em>(${t.dur}′)</em>`:''}`);
+  const nf=filasVista().filter(f=>f.type==='slot').length;
   document.getElementById('tramoPreview').innerHTML=
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`+
-    `<div><strong>${lt.length} sesiones/día</strong> → ${total} a la semana por grupo.<br>${partes.join(' · ')}</div>`;
+    `<div><strong>${nf} franjas/día</strong> → ${fmtH(total)} h lectivas a la semana por grupo.<br>${partes.join(' · ')}</div>`;
   // sugerencia de reparto si coincide con un preset conocido
   const box=document.getElementById('presetBox'); const pre=presetHoras(total);
   if(pre){
-    box.innerHTML=`<button class="btn btn-sm" id="btnPreset" style="margin-top:10px">Cargar reparto sugerido (${total} sesiones/semana)</button>`;
+    box.innerHTML=`<button class="btn btn-sm" id="btnPreset" style="margin-top:10px">Cargar reparto oficial (${fmtH(total)} h/semana)</button>`;
     document.getElementById('btnPreset').onclick=()=>{ state.horas=JSON.parse(JSON.stringify(pre)); toast('Reparto sugerido cargado. Revísalo en el paso 2.'); if(activeTab==='materias')renderHoras(); };
   } else box.innerHTML='';
   renderPlantillaVacia();
@@ -565,10 +560,13 @@ function renderPlantillaVacia(){
    PANEL 2 · MATERIAS / HORAS
    ========================================================================= */
 function materiasDeEtapa(etapa){return MATERIAS.filter(m=>m.etapas.includes(etapa));}
+// La tabla se muestra y edita en HORAS (con medias: 0,5/1/1,5…). Internamente todo va en tramos de 30' (horas×2).
+function tramosAHoras(t){return (t||0)/2;}
+function fmtH(t){const h=(t||0)/2; return Number.isInteger(h)?String(h):h.toFixed(1).replace('.',',');}
 function renderHoras(){
   const tbl=document.getElementById('horasTable');
   const filas=MATERIAS.filter(m=>GRUPOS.some(g=>m.etapas.includes(g.etapa)));
-  let html='<thead><tr><th style="min-width:150px">Materia</th>';
+  let html='<thead><tr><th style="min-width:150px">Materia (horas/semana)</th>';
   GRUPOS.forEach(g=>html+=`<th title="${g.nombre}">${g.id.startsWith('INF')?g.id.replace('INF','I'):g.id+'º'}</th>`);
   html+='</tr></thead><tbody>';
   filas.forEach(m=>{
@@ -576,36 +574,41 @@ function renderHoras(){
     GRUPOS.forEach(g=>{
       const aplica=m.etapas.includes(g.etapa);
       if(!aplica){html+='<td style="background:#f8fafc"></td>';return;}
-      const v=state.horas[g.id]?.[m.id]||0;
-      html+=`<td><input class="hours-input" type="number" min="0" max="20" value="${v}" data-g="${g.id}" data-m="${m.id}"></td>`;
+      const v=state.horas[g.id]?.[m.id]||0;       // tramos
+      html+=`<td><input class="hours-input" type="number" min="0" max="10" step="0.5" value="${tramosAHoras(v)}" data-g="${g.id}" data-m="${m.id}"></td>`;
     });
     html+='</tr>';
   });
-  // fila totales
-  html+='<tr style="background:#f3f4f6;font-weight:700"><td>Total / semana</td>';
+  // fila totales (en horas)
+  html+='<tr style="background:#f3f4f6;font-weight:700"><td>Total lectivo / semana</td>';
   GRUPOS.forEach(g=>html+=`<td id="tot-${g.id}"></td>`);
   html+='</tr></tbody>';
   tbl.innerHTML=html;
   tbl.querySelectorAll('.hours-input').forEach(inp=>{
-    inp.addEventListener('input',()=>{
+    const apply=()=>{
       const g=inp.dataset.g,m=inp.dataset.m;
+      let h=parseFloat((inp.value||'0').replace(',','.'));
+      if(isNaN(h)||h<0)h=0;
+      h=Math.round(h*2)/2;                          // ajustar a media hora
       if(!state.horas[g])state.horas[g]={};
-      state.horas[g][m]=parseInt(inp.value||'0',10);
+      state.horas[g][m]=Math.round(h*2);            // guardar en tramos
       updTotales();
-    });
+    };
+    inp.addEventListener('input',apply);
+    inp.addEventListener('change',()=>{ apply(); const v=state.horas[inp.dataset.g]?.[inp.dataset.m]||0; inp.value=tramosAHoras(v); }); // normaliza al salir
   });
   updTotales();
 }
-function totalGrupo(g){return Object.values(state.horas[g]||{}).reduce((a,b)=>a+(parseInt(b)||0),0);}
+function totalGrupo(g){return Object.values(state.horas[g]||{}).reduce((a,b)=>a+(parseInt(b)||0),0);} // en tramos (uso interno)
 function updTotales(){
-  const need=slotsSemana();
+  const needT=slotsSemana();                        // tramos (45) = 22,5 h
   GRUPOS.forEach(g=>{
     const c=document.getElementById('tot-'+g.id); if(!c)return;
-    const t=totalGrupo(g.id);
-    c.textContent=t;
-    if(t===need){ c.className='total-ok'; c.title='Cuadra ('+need+')'; }
-    else if(t>need){ c.className='total-bad'; c.title='Se pasa: sobran '+(t-need)+' (máx. '+need+')'; }
-    else { c.className='total-warn'; c.title='Quedarán '+(need-t)+' sesiones libres'; }
+    const t=totalGrupo(g.id);                        // tramos
+    c.textContent=fmtH(t)+' h';
+    if(t===needT){ c.className='total-ok'; c.title='Cuadra ('+fmtH(needT)+' h lectivas)'; }
+    else if(t>needT){ c.className='total-bad'; c.title='Se pasa: sobran '+fmtH(t-needT)+' h (máx. '+fmtH(needT)+' h)'; }
+    else { c.className='total-warn'; c.title='Quedarán '+fmtH(needT-t)+' h libres'; }
   });
 }
 
@@ -620,10 +623,18 @@ function renderMaestros(){
     return;
   }
   let html='<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Especialidad</th><th>Disponibilidad</th><th></th></tr></thead><tbody>';
-  state.maestros.forEach(m=>{
+  const orden={inf:0,pri:1,esp:2};
+  const lista=state.maestros.slice().sort((a,b)=>orden[catMaestro(a.rol)]-orden[catMaestro(b.rol)] || a.nombre.localeCompare(b.nombre));
+  let catActual=null;
+  lista.forEach(m=>{
+    const cat=catMaestro(m.rol);
+    if(cat!==catActual){ catActual=cat;
+      html+=`<tr><td colspan="4" style="background:${CAT_BG[cat]};color:${CAT_COLOR[cat]};font-weight:700;font-size:12px;letter-spacing:.04em;text-transform:uppercase;padding:4px 10px">${CAT_LABEL[cat]}</td></tr>`;
+    }
     const dias=m.dias?m.dias.join(' '):'Todos los días';
     const tr=m.tramos&&m.tramos.length?(' · tramos '+m.tramos.map(x=>x+1).join(',')):'';
-    html+=`<tr><td><strong>${m.nombre}</strong></td><td>${m.rol}</td><td class="small muted">${dias}${tr}</td>
+    const red=m.reduccion>0?` · <span style="color:#b45309">−${fmtH(Math.round(m.reduccion*2))} h no lectivas</span>`:'';
+    html+=`<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CAT_COLOR[cat]};margin-right:7px;vertical-align:middle"></span><strong>${m.nombre}</strong></td><td>${m.rol}</td><td class="small muted">${dias}${tr}${red}</td>
       <td style="white-space:nowrap"><button class="btn btn-sm btn-icon" data-edit="${m.id}">✎</button>
       <button class="btn btn-sm btn-icon" data-del="${m.id}">🗑</button></td></tr>`;
   });
@@ -642,6 +653,7 @@ function openMaestro(id){
   document.getElementById('mTitle').textContent=id?'Editar maestro/a':'Nuevo maestro/a';
   document.getElementById('mNombre').value=editingMaestro.nombre;
   document.getElementById('mRol').value=editingMaestro.rol;
+  document.getElementById('mReduccion').value=editingMaestro.reduccion||0;
   // días
   const dd=document.getElementById('mDias');dd.innerHTML='';
   DIAS.forEach(d=>{
@@ -669,6 +681,8 @@ function saveMaestro(){
   editingMaestro.dias=(dias.length===DIAS.length||dias.length===0)?null:dias;
   const tramos=[...document.querySelectorAll('#mTramos .daychip.on')].map(c=>parseInt(c.dataset.t));
   editingMaestro.tramos=tramos.length?tramos:null;
+  let red=parseFloat((document.getElementById('mReduccion').value||'0').replace(',','.'));
+  editingMaestro.reduccion=(isNaN(red)||red<0)?0:Math.round(red*2)/2;
   if(editingMaestro._new){delete editingMaestro._new;state.maestros.push(editingMaestro);}
   document.getElementById('mOverlay').classList.remove('show');
   renderMaestros();
@@ -679,55 +693,85 @@ function closeModal(){document.getElementById('mOverlay').classList.remove('show
 /* =========================================================================
    PANEL 4 · ASIGNACIÓN
    ========================================================================= */
+function catMaestro(rol){ if(rol==='Infantil')return 'inf'; if(rol&&rol.indexOf('Tutor')===0)return 'pri'; return 'esp'; }
+const CAT_LABEL={inf:'Infantil', pri:'Primaria (tutorías)', esp:'Especialistas'};
+const CAT_COLOR={inf:'#b45309', pri:'#1d4ed8', esp:'#15803d'};       // ámbar / azul / verde
+const CAT_BG={inf:'#fef3c7', pri:'#dbeafe', esp:'#dcfce7'};
 function profOptions(selected){
   let o='<option value="">— elige —</option>';
-  state.maestros.forEach(m=>o+=`<option value="${m.id}"${m.id===selected?' selected':''}>${m.nombre} · ${m.rol}</option>`);
+  ['inf','pri','esp'].forEach(cat=>{
+    const ms=state.maestros.filter(m=>catMaestro(m.rol)===cat); if(!ms.length)return;
+    o+=`<optgroup label="${CAT_LABEL[cat]}">`;
+    ms.forEach(m=>o+=`<option value="${m.id}"${m.id===selected?' selected':''}>${m.nombre} · ${m.rol}</option>`);
+    o+='</optgroup>';
+  });
   return o;
 }
 function renderEspecialistas(){
   const box=document.getElementById('especialistasBox'); if(!box)return;
   if(!state.especialistas)state.especialistas={};
-  const defs=[['ING','Inglés (todo el centro)'],['EF','Educación Física'],['MUS','Música'],['FRA','Francés (5º·6º)'],['CMED13','Conoc. Medio 1º-3º'],['CMED46','Conoc. Medio 4º-6º']];
-  box.innerHTML=defs.map(([k,label])=>`<div class="field" style="margin:0"><label>${label}</label><select data-esp="${k}">${profOptions(state.especialistas[k])}</select></div>`).join('');
+  if(!state.evCursos) state.evCursos=GRUPOS.filter(g=>state.religion[g.id]&&state.religion[g.id].ev).map(g=>g.id);
+  const defs=[['ING','Inglés (todo el centro)'],['EF','Educación Física'],['MUS','Música'],['FRA','Francés (5º·6º)'],['CMED13','Conoc. Medio 1º-3º'],['CMED46','Conoc. Medio 4º-6º'],['REL_CAT','Religión Católica (todo el centro)'],['REL_EV','Religión Evangélica']];
+  let html=defs.map(([k,label])=>`<div class="field" style="margin:0"><label>${label}</label><select data-esp="${k}">${profOptions(state.especialistas[k])}</select></div>`).join('');
+  // checkboxes de cursos para la evangélica
+  if(state.especialistas.REL_EV){
+    const chips=GRUPOS.filter(g=>(state.horas[g.id]?.REL||0)>0).map(g=>{
+      const on=state.evCursos.includes(g.id);
+      return `<label class="daychip${on?' on':''}" data-evg="${g.id}" style="cursor:pointer">${g.id.startsWith('INF')?g.id.replace('INF','I'):g.id+'º'}</label>`;
+    }).join('');
+    html+=`<div class="field" style="grid-column:1/-1;margin:0"><label>Cursos con Religión Evangélica (marca dónde se imparte)</label><div class="daychips">${chips}</div></div>`;
+  }
+  html+=`<div class="small muted" style="grid-column:1/-1;margin-top:2px">La Católica se fija en todos los cursos. La Evangélica solo en los cursos que marques arriba. La Atención Educativa es el tutor/a por defecto.</div>`;
+  box.innerHTML=html;
   box.querySelectorAll('[data-esp]').forEach(s=>s.onchange=()=>{
-    const k=s.dataset.esp; if(!state.especialistas)state.especialistas={}; state.especialistas[k]=s.value;
-    aplicarEspecialista(k,s.value); renderAsig();
+    const k=s.dataset.esp; state.especialistas[k]=s.value;
+    aplicarEspecialista(k,s.value); renderEspecialistas(); renderAsig();
+  });
+  box.querySelectorAll('[data-evg]').forEach(c=>c.onclick=()=>{
+    const g=c.dataset.evg; const i=state.evCursos.indexOf(g);
+    if(i>=0)state.evCursos.splice(i,1); else state.evCursos.push(g);
+    aplicarEspecialista('REL_EV',state.especialistas.REL_EV); renderEspecialistas(); renderAsig();
   });
 }
 function aplicarEspecialista(k,mid){
+  if(k==='REL_EV'){   // la evangélica solo en los cursos marcados
+    if(!state.evCursos)state.evCursos=[];
+    GRUPOS.forEach(g=>{ if((state.horas[g.id]?.REL||0)>0){
+      if(!state.religion[g.id])state.religion[g.id]={cat:'',ev:'',ae:state.tutores[g.id]||''};
+      state.religion[g.id].ev = (mid && state.evCursos.includes(g.id))?mid:'';
+    }});
+    return;
+  }
   if(!mid) return;
+  if(k==='REL_CAT'){
+    GRUPOS.forEach(g=>{ if((state.horas[g.id]?.REL||0)>0){
+      if(!state.religion[g.id])state.religion[g.id]={cat:'',ev:'',ae:state.tutores[g.id]||''};
+      state.religion[g.id].cat=mid;
+    }});
+    return;
+  }
   const mat = (k==='CMED13'||k==='CMED46')?'CMED':k;
   const grupos = k==='CMED13'?['1','2','3'] : k==='CMED46'?['4','5','6'] : GRUPOS.map(g=>g.id);
   grupos.forEach(g=>{ if((state.horas[g]?.[mat]||0)>0){ if(!state.asig[g])state.asig[g]={}; state.asig[g][mat]=mid; } });
 }
 function autodetectEspecialistas(){
-  if(!state.especialistas)state.especialistas={ING:'',EF:'',MUS:'',FRA:'',CMED13:'',CMED46:''};
+  if(!state.especialistas)state.especialistas={ING:'',EF:'',MUS:'',FRA:'',CMED13:'',CMED46:'',REL_CAT:'',REL_EV:''};
   const uno=r=>{const a=state.maestros.filter(m=>m.rol===r);return a.length===1?a[0].id:'';};
-  const pairs=[['ING','Inglés'],['EF','Educación Física'],['MUS','Música'],['FRA','Francés']];
+  const pairs=[['ING','Inglés'],['EF','Educación Física'],['MUS','Música'],['FRA','Francés'],['REL_CAT','Religión Católica'],['REL_EV','Religión Evangélica']];
   pairs.forEach(([k,rol])=>{ const id=uno(rol); if(id && !state.especialistas[k]){ state.especialistas[k]=id; aplicarEspecialista(k,id); } });
 }
 function renderCarga(){
   const box=document.getElementById('cargaResumen'); if(!box)return;
   if(state.maestros.length===0){box.innerHTML='';return;}
-  const max=slotsSemana();
-  const load={}; state.maestros.forEach(m=>load[m.id]=0);
-  GRUPOS.forEach(g=>{
-    materiasDeEtapa(g.etapa).forEach(m=>{
-      if(m.rol==='religion')return;
-      const h=state.horas[g.id]?.[m.id]||0; if(h<=0)return;
-      const t=state.asig[g.id]?.[m.id]; if(t&&load[t]!=null) load[t]+=h;
-    });
-    const r=state.religion[g.id]||{}; const hr=state.horas[g.id]?.REL||0;
-    if(hr>0){ [r.cat,r.ev,r.ae].forEach(t=>{ if(t&&load[t]!=null) load[t]+=hr; }); }
-  });
+  const ch=chequeoCargas();   // load y avail reales por maestro (con pesos, días y reducciones)
   const chips=state.maestros.map(m=>{
-    const l=load[m.id]||0; const over=l>max, tight=l===max;
+    const l=ch.load[m.id]||0, a=ch.avail[m.id]||0; const over=l>a, tight=l>0&&l===a;
     const bg=over?'#fee2e2':(tight?'#fef3c7':'#dcfce7'), col=over?'#b91c1c':(tight?'#92580a':'#14532d');
-    return `<span class="chip" style="background:${bg};color:${col}">${m.nombre}: ${l}/${max}${over?' ⚠':''}</span>`;
+    return `<span class="chip" style="background:${bg};color:${col}">${m.nombre}: ${fmtH(l)}/${fmtH(a)} h${over?' ⚠':''}</span>`;
   }).join(' ');
-  const exceso=state.maestros.some(m=>(load[m.id]||0)>max);
-  box.innerHTML=`<div style="margin:4px 0 16px"><div class="small muted" style="margin-bottom:6px">Carga semanal asignada (máx. ${max} sesiones):</div><div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>`+
-    (exceso?`<div class="notice warn" style="margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Hay maestros/as con más horas de las que caben en la semana. Reparte alguna materia a otra persona (p. ej. apoyo) o el cuadre fallará.</div>`:'')+`</div>`;
+  const exceso=ch.exceso.length>0;
+  box.innerHTML=`<div style="margin:4px 0 16px"><div class="small muted" style="margin-bottom:6px">Carga lectiva asignada / horas disponibles de cada maestro/a:</div><div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>`+
+    (exceso?`<div class="notice warn" style="margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Hay maestros/as con más horas de las que caben en su disponibilidad. Reparte alguna materia a otra persona (p. ej. apoyo) o el cuadre fallará.</div>`:'')+`</div>`;
 }
 function renderAsig(){
   renderEspecialistas();
@@ -831,6 +875,25 @@ function relDomain(es,b){const dom=[];for(let d=0;d<es.ND;d++)for(let s=0;s<es.N
 function relPlace(es,b,c){es.grid[b.g][c.d][c.s]={mat:'REL',prof:b.cat,band:{cat:b.cat,ev:b.ev,ae:b.ae}};occ(es,b.cat,c.d,c.s,1);if(b.ev)occ(es,b.ev,c.d,c.s,1);if(b.ae)occ(es,b.ae,c.d,c.s,1);}
 function relUnplace(es,b,c){es.grid[b.g][c.d][c.s]=null;occ(es,b.cat,c.d,c.s,0);if(b.ev)occ(es,b.ev,c.d,c.s,0);if(b.ae)occ(es,b.ae,c.d,c.s,0);}
 
+// --- RELIGIÓN EN BLOQUE (la sesión de un grupo va en tramos contiguos, sin cruzar el recreo) ---
+function blockSlots(es,len){const out=[];for(const seg of es.segs){for(let i=0;i+len<=seg.length;i+=len)out.push(seg.slice(i,i+len));}return out;}
+function relBlockDomain(es,b,len){
+  const dom=[]; const slots=blockSlots(es,len);
+  for(let d=0;d<es.ND;d++)for(const ss of slots){
+    let ok=true;
+    for(const s of ss){
+      if(gBusy(es,b.g,d,s)){ok=false;break;}
+      if(!isAvail(es,b.cat,d,s)||tBusy(es,b.cat,d,s)){ok=false;break;}
+      if(b.ev&&(!isAvail(es,b.ev,d,s)||tBusy(es,b.ev,d,s))){ok=false;break;}
+      if(b.ae&&(!isAvail(es,b.ae,d,s)||tBusy(es,b.ae,d,s))){ok=false;break;}
+    }
+    if(ok)dom.push({d,ss});
+  }
+  return dom;
+}
+function relBlockPlace(es,b,c){for(const s of c.ss){es.grid[b.g][c.d][s]={mat:'REL',prof:b.cat,band:{cat:b.cat,ev:b.ev,ae:b.ae}};occ(es,b.cat,c.d,s,1);if(b.ev)occ(es,b.ev,c.d,s,1);if(b.ae)occ(es,b.ae,c.d,s,1);}}
+function relBlockUnplace(es,b,c){for(const s of c.ss){es.grid[b.g][c.d][s]=null;occ(es,b.cat,c.d,s,0);if(b.ev)occ(es,b.ev,c.d,s,0);if(b.ae)occ(es,b.ae,c.d,s,0);}}
+
 function sessDomain(es,x){const dom=[];for(let d=0;d<es.ND;d++)for(let s=0;s<es.NS;s++){
   if(gBusy(es,x.g,d,s))continue; if(tBusy(es,x.t,d,s))continue; if(!isAvail(es,x.t,d,s))continue; dom.push({d,s});}return dom;}
 function sessPlace(es,x,c){es.grid[x.g][c.d][c.s]={mat:x.m,prof:x.t};occ(es,x.t,c.d,c.s,1);}
@@ -879,61 +942,197 @@ function meterBloqueEnPrimera(es,g,d){
   }
   return false;
 }
+function unirParEnDia(es,g,d,ia,ib){
+  const A=es.grid[g][d][ia], B=es.grid[g][d][ib];
+  if(!A||!B||A.band||B.band) return;
+  if(A.mat===B.mat && A.prof===B.prof) return;
+  // 1) traer a ib una celda igual a A
+  for(let t=0;t<es.NS;t++){ if(t===ia||t===ib)continue; const ct=es.grid[g][d][t]; if(!ct||ct.band)continue;
+    if(ct.mat===A.mat&&ct.prof===A.prof && profLibre(es,B.prof,d,t)&&profLibre(es,ct.prof,d,ib)){ swapPH(es,g,d,ib,t); return; } }
+  // 2) traer a ia una celda igual a B
+  for(let t=0;t<es.NS;t++){ if(t===ia||t===ib)continue; const ct=es.grid[g][d][t]; if(!ct||ct.band)continue;
+    if(ct.mat===B.mat&&ct.prof===B.prof && profLibre(es,A.prof,d,t)&&profLibre(es,ct.prof,d,ia)){ swapPH(es,g,d,ia,t); return; } }
+}
+function paresUnidos(){ return filasVista(null).filter(r=>r.type==='slot'&&r.i2!=null).map(r=>[r.i,r.i2]); }
 function unirPrimeraHora(es){
+  const pares=paresUnidos();
   for(const G of GRUPOS){ const g=G.id;
-    for(let d=0;d<es.ND;d++){
-      const c0=es.grid[g][d][0], c1=es.grid[g][d][1];
-      if(!c0||!c1||c0.band||c1.band) continue;
-      if(c0.mat===c1.mat && c0.prof===c1.prof) continue;
-      let done=false;
-      // 1) traer al tramo 1 una celda igual al tramo 0
-      for(let t=2;t<es.NS&&!done;t++){ const ct=es.grid[g][d][t]; if(!ct||ct.band)continue;
-        if(ct.mat===c0.mat&&ct.prof===c0.prof && profLibre(es,c1.prof,d,t)&&profLibre(es,ct.prof,d,1)){ swapPH(es,g,d,1,t); done=true; }
-      }
-      // 2) traer al tramo 0 una celda igual al tramo 1
-      for(let t=2;t<es.NS&&!done;t++){ const ct=es.grid[g][d][t]; if(!ct||ct.band)continue;
-        if(ct.mat===c1.mat&&ct.prof===c1.prof && profLibre(es,c0.prof,d,t)&&profLibre(es,ct.prof,d,0)){ swapPH(es,g,d,0,t); done=true; }
-      }
-      // 3) meter en 0 y 1 cualquier materia con >=2 sesiones ese día
-      if(!done) meterBloqueEnPrimera(es,g,d);
-    }
+    for(let d=0;d<es.ND;d++){ for(const pr of pares) unirParEnDia(es,g,d,pr[0],pr[1]); }
   }
 }
-function solveShared(es,tasks,rnd,deadline){
-  function dom(t){return t.kind==='rel'?relDomain(es,t.b):sessDomain(es,t.x);}
+// Devuelve el "maestro responsable" de una tarea (para diagnóstico)
+function taskProf(t){
+  if(t.kind==='sess')return t.x.t;
+  if(t.kind==='relblock')return t.b.cat;     // la católica es quien más restringe la banda
+  return t.b&&t.b.cat;
+}
+function taskDom(es,t){
+  if(t.kind==='relblock')return relBlockDomain(es,t.b,t.len);
+  if(t.kind==='rel')return relDomain(es,t.b);
+  return sessDomain(es,t.x);
+}
+function taskPlace(es,t,c){ if(t.kind==='relblock')relBlockPlace(es,t.b,c); else if(t.kind==='rel')relPlace(es,t.b,c); else sessPlace(es,t.x,c); }
+function taskUnplace(es,t,c){ if(t.kind==='relblock')relBlockUnplace(es,t.b,c); else if(t.kind==='rel')relUnplace(es,t.b,c); else sessUnplace(es,t.x,c); }
+// diag: contador de cuántas veces cada maestro deja una tarea sin huecos (dead-end)
+function solveShared(es,tasks,rnd,deadline,diag){
+  diag = diag || {};
   function bt(rem){
     if(Date.now()>deadline)return false;
     if(rem.length===0)return true;
+    // MRV: tarea con menor dominio
     let bi=-1,bd=null,bl=Infinity;
-    for(let i=0;i<rem.length;i++){const d=dom(rem[i]);if(d.length<bl){bl=d.length;bd=d;bi=i;if(bl===0)break;}}
-    if(bl===0)return false;
+    for(let i=0;i<rem.length;i++){const d=taskDom(es,rem[i]);if(d.length<bl){bl=d.length;bd=d;bi=i;if(bl===0)break;}}
+    if(bl===0){ const p=taskProf(rem[bi]); if(p)diag[p]=(diag[p]||0)+1; return false; }
     const t=rem[bi]; const rest=rem.slice(0,bi).concat(rem.slice(bi+1));
-    let order=bd.map(c=>({c,sc:(t.kind==='sess'?softScore(es,t.x,c):0)+rnd()*0.6}));
+    let order=bd.map(c=>({c,sc:(t.kind==='sess'?softScore(es,t.x,c):relBlockScore(es,t,c))+rnd()*0.6}));
     order.sort((a,b)=>b.sc-a.sc);
     for(const{c}of order){
-      if(t.kind==='rel')relPlace(es,t.b,c);else sessPlace(es,t.x,c);
-      if(bt(rest))return true;
-      if(t.kind==='rel')relUnplace(es,t.b,c);else sessUnplace(es,t.x,c);
+      taskPlace(es,t,c);
+      // forward-checking ligero: ¿alguna tarea pendiente del mismo grupo o maestro se quedó sin huecos?
+      let dead=false;
+      for(const r of rest){
+        if(!sharesScope(r,t))continue;
+        if(taskDom(es,r).length===0){ const p=taskProf(r); if(p)diag[p]=(diag[p]||0)+1; dead=true; break; }
+      }
+      if(!dead && bt(rest))return true;
+      taskUnplace(es,t,c);
       if(Date.now()>deadline)return false;
     }
     return false;
   }
   return bt(tasks.slice());
 }
-function fillTutor(es,sessions){
+function scopeGroup(t){return t.kind==='sess'?t.x.g:t.b.g;}
+function sharesScope(a,b){
+  if(scopeGroup(a)===scopeGroup(b))return true;
+  const pa=taskProf(a),pb=taskProf(b); if(pa&&pa===pb)return true;
+  // bandas de religión comparten cat/ev/ae
+  if(a.kind!=='sess'&&b.kind!=='sess'){const ba=a.b,bb=b.b;
+    if(ba.cat&&ba.cat===bb.cat)return true; if(ba.ev&&ba.ev===bb.ev)return true; }
+  if(a.kind!=='sess'&&b.kind==='sess'){const ba=a.b; if(b.x.t&&(b.x.t===ba.cat||b.x.t===ba.ev||b.x.t===ba.ae))return true;}
+  if(b.kind!=='sess'&&a.kind==='sess'){const bb=b.b; if(a.x.t&&(a.x.t===bb.cat||a.x.t===bb.ev||a.x.t===bb.ae))return true;}
+  return false;
+}
+// preferimos bloques de religión "alineados" (empezando al inicio de un segmento) y temprano
+function relBlockScore(es,t,c){ const seg=segOf(es,c.ss[0]); const atStart=seg[0]===c.ss[0]?4:0; return atStart - c.ss[0]*0.1; }
+function fillTutor(es,sessions,diag){
+  diag = diag || {};
+  // primero las de menos margen (más sesiones del mismo grupo) para fallar pronto
   for(const ts of sessions){
     for(let n=0;n<ts.count;n++){
       const free=[];
       for(let d=0;d<es.ND;d++)for(let s=0;s<es.NS;s++){
         if(es.grid[ts.g][d][s]==null && !tBusy(es,ts.t,d,s) && isAvail(es,ts.t,d,s)) free.push({d,s});
       }
-      if(free.length===0)return false;
+      if(free.length===0){ if(ts.t)diag[ts.t]=(diag[ts.t]||0)+1; return false; }
       free.sort((a,b)=>softScore(es,{g:ts.g,m:ts.m,t:ts.t},b)-softScore(es,{g:ts.g,m:ts.m,t:ts.t},a));
       const c=free[0];
       es.grid[ts.g][c.d][c.s]={mat:ts.m,prof:ts.t};occ(es,ts.t,c.d,c.s,1);
     }
   }
   return true;
+}
+// Pre-chequeo determinista: ¿algún maestro tiene más horas asignadas que huecos disponibles?
+function chequeoCargas(){
+  const W=pesosSlot(), NS=W.length, ND=DIAS.length;
+  const pesoTotal=W.reduce((a,b)=>a+b,0);   // peso total de un día completo (en medias horas)
+  const load={}, avail={};
+  state.maestros.forEach(m=>{
+    load[m.id]=0;
+    let base;
+    if(!m.dias && (!m.tramos||!m.tramos.length)){
+      base=pesoTotal*ND;
+    } else {
+      const nd=(m.dias?m.dias.length:ND);
+      if(m.tramos&&m.tramos.length){
+        // sumar solo el peso de los tramos permitidos
+        base=nd*m.tramos.reduce((a,s)=>a+(W[s]||1),0);
+      } else {
+        base=nd*pesoTotal;
+      }
+    }
+    avail[m.id]=Math.max(0, base - Math.round((m.reduccion||0)*2));   // descontar horas no lectivas
+  });
+  GRUPOS.forEach(g=>{
+    materiasDeEtapa(g.etapa).forEach(m=>{ if(m.rol==='religion')return;
+      const h=state.horas[g.id]?.[m.id]||0; if(h<=0)return; const t=state.asig[g.id]?.[m.id]; if(t&&load[t]!=null)load[t]+=h; });
+    const r=state.religion[g.id]||{}; const hr=state.horas[g.id]?.REL||0;
+    if(hr>0)[r.cat,r.ev,r.ae].forEach(t=>{ if(t&&load[t]!=null)load[t]+=hr; });
+  });
+  const exceso=[], limite=[];
+  state.maestros.forEach(m=>{
+    if(load[m.id]>avail[m.id]) exceso.push({m,load:load[m.id],avail:avail[m.id]});
+    else if(load[m.id]>0 && load[m.id]===avail[m.id]) limite.push({m,load:load[m.id]});
+  });
+  return {load,avail,exceso,limite};
+}
+function nombreMaestro(id){const m=state.maestros.find(x=>x.id===id);return m?m.nombre:id;}
+
+// === ANÁLISIS DE VIABILIDAD (avisa de dificultades por falta de horario) ===
+function analizarViabilidad(){
+  const NS=numTramos(), ND=DIAS.length, needG=slotsSemana();
+  const ch=chequeoCargas();                       // load, avail por maestro
+  const maestrosUsados=state.maestros.filter(m=>ch.load[m.id]>0);
+  const filas=maestrosUsados.map(m=>{
+    const l=ch.load[m.id], a=ch.avail[m.id], holg=a-l;
+    let clase='ok';
+    if(l>a)clase='exceso'; else if(holg===0)clase='limite'; else if(holg<=2)clase='justo';
+    const partes=[];
+    if(m.dias)partes.push('días: '+m.dias.join('/'));
+    if(m.tramos&&m.tramos.length)partes.push('tramos limitados');
+    if(m.reduccion>0)partes.push(fmtH(Math.round(m.reduccion*2))+' h no lectivas');
+    const restr=partes.join(' · ');
+    return {m,l,a,holg,clase,restr};
+  }).sort((x,y)=>x.holg-y.holg);
+
+  // chequeos de grupo: ¿las horas asignadas caben en la jornada lectiva?
+  const gruposMal=[];
+  GRUPOS.forEach(g=>{ const t=totalGrupo(g.id); if(t>needG) gruposMal.push({g,t}); });
+
+  // chequeos de religión por incompatibilidad de días cat/ev
+  const relMal=[];
+  GRUPOS.forEach(g=>{
+    const r=state.religion[g.id]||{}; if((state.horas[g.id]?.REL||0)<=0)return;
+    if(!r.cat){ relMal.push({g,msg:'falta maestro/a de Religión Católica'}); return; }
+    if(r.ev){
+      const dc=state.maestros.find(x=>x.id===r.cat)?.dias, de=state.maestros.find(x=>x.id===r.ev)?.dias;
+      if(dc&&de){ const inter=dc.filter(d=>de.includes(d)); if(!inter.length) relMal.push({g,msg:`la banda no encaja: ${nombreMaestro(r.cat)} (${dc.join('/')}) y ${nombreMaestro(r.ev)} (${de.join('/')}) no coinciden ningún día`}); }
+    }
+  });
+  // evangélica: ¿caben todos sus bloques en sus días? (carga ya lo cubre, pero damos detalle)
+  return {filas, gruposMal, relMal, needG, NS, ND};
+}
+function comprobarViabilidad(){
+  const v=validar();   // faltan asignaciones / horas que se pasan
+  const a=analizarViabilidad();
+  const exceso=a.filas.filter(f=>f.clase==='exceso');
+  const limite=a.filas.filter(f=>f.clase==='limite');
+  const justo=a.filas.filter(f=>f.clase==='justo');
+  let html='';
+  const li=f=>`<li><strong>${f.m.nombre}</strong> <span class="muted">(${f.m.rol})</span>: <strong>${fmtH(f.l)} h</strong> asignadas · ${fmtH(f.a)} h disponibles${f.restr?` <span class="muted">[${f.restr}]</span>`:''} → ${f.holg<0?`<span style="color:#b91c1c">se pasa ${fmtH(-f.holg)} h</span>`:f.holg===0?'<span style="color:#b45309">0 h libres</span>':`${fmtH(f.holg)} h de margen`}</li>`;
+
+  // 1) bloqueos seguros (imposible por falta de horario)
+  if(exceso.length || a.gruposMal.length || a.relMal.length){
+    html+=`<div class="notice warn">${iconWarn()}<div><strong>Hay dificultades que NO se pueden superar por falta de horario:</strong>`;
+    if(exceso.length) html+=`<div style="margin-top:6px">Maestros/as con más horas de las que caben en su disponibilidad:</div><ul style="margin:4px 0 0 18px">${exceso.map(li).join('')}</ul>`;
+    if(a.gruposMal.length) html+=`<div style="margin-top:6px">Grupos cuyo reparto supera la jornada lectiva (${fmtH(a.needG)} h):</div><ul style="margin:4px 0 0 18px">${a.gruposMal.map(x=>`<li><strong>${x.g.nombre}</strong>: ${fmtH(x.t)} h asignadas</li>`).join('')}</ul>`;
+    if(a.relMal.length) html+=`<div style="margin-top:6px">Religión:</div><ul style="margin:4px 0 0 18px">${a.relMal.map(x=>`<li><strong>${x.g.nombre}</strong>: ${x.msg}</li>`).join('')}</ul>`;
+    html+=`<div style="margin-top:8px">Reparte materias a otra persona o amplía disponibilidad antes de generar.</div></div></div>`;
+  }
+  // 2) faltan datos (sin repetir lo de horas que se pasan, ya mostrado arriba)
+  const vFalta=v.filter(x=>!/no caben/.test(x));
+  if(vFalta.length){
+    html+=`<div class="notice warn">${iconWarn()}<div><strong>Faltan datos por completar:</strong><ul style="margin:4px 0 0 18px">${vFalta.map(x=>`<li>${x}</li>`).join('')}</ul></div></div>`;
+  }
+  // 3) viable pero ajustado
+  if(!exceso.length && !a.gruposMal.length && !a.relMal.length && !vFalta.length){
+    if(limite.length || justo.length){
+      html+=`<div class="notice" style="border-color:#fde68a;background:#fffbeb"><svg viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><strong>Viable, pero muy ajustado.</strong> Nadie supera sus horas, así que se puede cuadrar (a veces hará falta afinar a mano). Quien va más al límite:<ul style="margin:4px 0 0 18px">${[...limite,...justo].map(li).join('')}</ul></div></div>`;
+    } else {
+      html+=`<div class="notice" style="border-color:#bbf7d0;background:#f0fdf4"><svg viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg><div><strong>Viable con holgura.</strong> Ningún maestro/a supera sus horas disponibles y todos tienen margen. No se detectan dificultades por falta de horario.</div></div>`;
+    }
+  }
+  avisoGen(html);
 }
 
 function generar(){
@@ -952,7 +1151,7 @@ function generar(){
 }
 function validar(){
   const p=[]; const need=slotsSemana();
-  GRUPOS.forEach(g=>{ const t=totalGrupo(g.id); if(t>need) p.push(`${g.nombre}: las horas suman ${t} y no caben en ${need} sesiones. Quita ${t-need}.`); });
+  GRUPOS.forEach(g=>{ const t=totalGrupo(g.id); if(t>need) p.push(`${g.nombre}: las horas suman ${fmtH(t)} h y no caben en ${fmtH(need)} h lectivas. Quita ${fmtH(t-need)} h.`); });
   GRUPOS.forEach(g=>{
     const mats=materiasDeEtapa(g.etapa).filter(m=>m.rol!=='religion'&&(state.horas[g.id]?.[m.id]||0)>0);
     mats.forEach(m=>{ if(!state.asig[g.id]?.[m.id]) p.push(`${g.nombre}: falta asignar maestro a ${m.nombre}.`); });
@@ -960,31 +1159,151 @@ function validar(){
   });
   return p;
 }
+function avisoGen(html){ document.getElementById('ttContainer').innerHTML=''; document.getElementById('genStatus').innerHTML=html; }
+function iconWarn(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';}
+
+// ===== MOTOR PRINCIPAL: min-conflicts (búsqueda local con reparación) =====
+// Replica el método manual: coloca religión en bloques, llena el resto y va moviendo lo que choca.
+function mcAvail(p,d,s){ const m=state.maestros.find(x=>x.id===p); if(!m)return true; if(m.dias&&!m.dias.includes(DIAS[d]))return false; if(m.tramos&&m.tramos.length&&!m.tramos.includes(s))return false; return true; }
+function mcSolve(rnd,deadline){
+  const ND=DIAS.length, W=pesosSlot(), NS=W.length, segs=segmentos();
+  const grid={}; GRUPOS.forEach(g=>{grid[g.id]=[];for(let d=0;d<ND;d++)grid[g.id][d]=new Array(NS).fill(null);});
+  const busyAt=(p,d,s)=>{ for(const g of GRUPOS){const c=grid[g.id][d][s]; if(!c)continue; if(c.band){if(c.band.cat===p||c.band.ev===p||c.band.ae===p)return true;}else if(c.prof===p)return true;} return false; };
+  // bloques contiguos cuya suma de pesos = target (para religión 1,5h = 3 medias horas)
+  function bloquesPeso(target){ const out=[]; for(const seg of segs){ for(let a=0;a<seg.length;a++){ let sum=0; for(let b=a;b<seg.length;b++){ sum+=W[seg[b]]; if(sum===target){out.push(seg.slice(a,b+1));break;} if(sum>target)break; } } } return out; }
+  // 1) RELIGIÓN en bloque de peso 3
+  const relTasks=GRUPOS.filter(g=>(state.horas[g.id]?.REL||0)>0).map(g=>{const r=state.religion[g.id]||{};return {g:g.id,cat:r.cat,ev:r.ev||null,ae:r.ae||state.tutores[g.id]||null,len:state.horas[g.id].REL};});
+  const relBloques=bloquesPeso(3);
+  function placeRel(i){ if(i>=relTasks.length)return true; const t=relTasks[i]; const opts=[];
+    for(let d=0;d<ND;d++)for(const ss of relBloques){ let ok=true;
+      for(const s of ss){ if(grid[t.g][d][s]){ok=false;break;} if(t.cat&&(!mcAvail(t.cat,d,s)||busyAt(t.cat,d,s))){ok=false;break;} if(t.ev&&(!mcAvail(t.ev,d,s)||busyAt(t.ev,d,s))){ok=false;break;} if(t.ae&&(!mcAvail(t.ae,d,s)||busyAt(t.ae,d,s))){ok=false;break;} }
+      if(ok)opts.push({d,ss}); }
+    for(let k=opts.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[opts[k],opts[j]]=[opts[j],opts[k]];}
+    for(const o of opts){ for(const s of o.ss)grid[t.g][o.d][s]={mat:'REL',prof:t.cat,band:{cat:t.cat,ev:t.ev,ae:t.ae}};
+      if(placeRel(i+1))return true; for(const s of o.ss)grid[t.g][o.d][s]=null; }
+    return false; }
+  if(!placeRel(0)) return null;
+  // 2) RELLENO (respeta pesos). Slots de 60 → materias con ≥2 medias horas restantes (preferir Lengua/Mates/GLO
+  //    en la 1ª hora). Slots de 30 → el resto. Greedy "mayor resto primero" para no dejar medias horas descuadradas.
+  const TRONCAL=m=>(m==='LEN'||m==='MAT'||m==='GLO');
+  for(const g of GRUPOS){
+    const libres60=[], libres30=[];
+    for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(grid[g.id][d][s])continue; (W[s]===2?libres60:libres30).push({d,s}); }
+    const rem={}, prof={};
+    materiasDeEtapa(g.etapa).forEach(m=>{ if(m.rol==='religion')return; const h=state.horas[g.id]?.[m.id]||0; if(h>0){rem[m.id]=h;prof[m.id]=state.asig[g.id]?.[m.id];} });
+    const slot0=libres60.filter(c=>c.s===0), slotN=libres60.filter(c=>c.s!==0);
+    for(let k=slot0.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[slot0[k],slot0[j]]=[slot0[j],slot0[k]];}
+    for(let k=slotN.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[slotN[k],slotN[j]]=[slotN[j],slotN[k]];}
+    function pick60(cell,prefTroncal){ // materia con rem>=2; preferir troncal si prefTroncal; evitar repetir el día
+      let cands=Object.keys(rem).filter(m=>rem[m]>=2);
+      if(!cands.length)return false;
+      cands.sort((a,b)=>{ if(prefTroncal){const ta=TRONCAL(a)?1:0,tb=TRONCAL(b)?1:0; if(ta!==tb)return tb-ta;} return rem[b]-rem[a]; });
+      let chosen=null; for(const m of cands){ let rep=false; for(let s=0;s<NS;s++){const c=grid[g.id][cell.d][s]; if(c&&c.mat===m){rep=true;break;}} if(!rep){chosen=m;break;} }
+      if(!chosen)chosen=cands[0];
+      grid[g.id][cell.d][cell.s]={mat:chosen,prof:prof[chosen]}; rem[chosen]-=2; return true; }
+    slot0.forEach(c=>pick60(c,true)); slotN.forEach(c=>pick60(c,false));
+    // slots de 30 con el resto
+    const pend=[]; Object.keys(rem).forEach(m=>{ for(let k=0;k<rem[m];k++)pend.push(m); rem[m]=0; });
+    for(let k=pend.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[pend[k],pend[j]]=[pend[j],pend[k]];}
+    libres30.forEach((cell,idx)=>{ const m=pend[idx]; if(m)grid[g.id][cell.d][cell.s]={mat:m,prof:prof[m]}; });
+  }
+  // 3) MIN-CONFLICTS (resolver solapes) + PULIDO (agrupar medias horas en bloques, evitar 30 min sueltos)
+  const contigPrev=s=>!(s===5), contigNext=s=>!(s===4); // 12:00→12:30 hay recreo: slot4 y slot5 NO son contiguos
+  function fragOf(g,d,s){ if(W[s]!==1)return 0; const c=grid[g][d][s]; if(!c||c.band)return 0;
+    const prev=(s>0&&contigPrev(s))?grid[g][d][s-1]:null, next=(s<NS-1&&contigNext(s))?grid[g][d][s+1]:null;
+    const okP=prev&&!prev.band&&prev.mat===c.mat, okN=next&&!next.band&&next.mat===c.mat;
+    return (okP||okN)?0:1; }
+  function hardCell(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0; let cost=0; const p=c.prof;
+    if(p&&!mcAvail(p,d,s))cost+=2;
+    if(p){ for(const g2 of GRUPOS){ if(g2.id===g)continue; const c2=grid[g2.id][d][s]; if(!c2)continue; const pp=c2.band?[c2.band.cat,c2.band.ev,c2.band.ae]:[c2.prof]; if(pp.indexOf(p)>=0)cost+=1; } }
+    return cost; }
+  function softCell(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0; let so=0.1*fragOf(g,d,s);
+    if(c.mat==='LEN'||c.mat==='MAT'||c.mat==='GLO'){ if(s!==0)so+=0.02; // preferir 1ª hora
+      let cnt=0; for(let s2=0;s2<NS;s2++){const cc=grid[g][d][s2]; if(cc&&!cc.band&&cc.mat===c.mat)cnt+=W[s2];}
+      if(cnt>3)so+=0.25*(cnt-3); } // más de 1,5h de la misma troncal en un día penaliza (favorece repartir)
+    return so; }
+  function cellCost(g,d,s){ return hardCell(g,d,s)+softCell(g,d,s); }
+  function hardList(){ let n=0,list=[]; GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){const cc=hardCell(g.id,d,s); if(cc>=1){n+=cc; list.push({g:g.id,d,s});}}}); return {n,list}; }
+  function softList(){ let list=[]; GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){if(fragOf(g.id,d,s)>0)list.push({g:g.id,d,s});}}); return list; }
+  function swapDelta(g,a,b){ const ca=grid[g][a.d][a.s], cb=grid[g][b.d][b.s];
+    // delta de coste local (las 2 celdas) — incluye su efecto en otros grupos vía hardCell
+    const before=cellCost(g,a.d,a.s)+cellCost(g,b.d,b.s);
+    grid[g][a.d][a.s]=cb; grid[g][b.d][b.s]=ca;
+    const after=cellCost(g,a.d,a.s)+cellCost(g,b.d,b.s);
+    grid[g][a.d][a.s]=ca; grid[g][b.d][b.s]=cb; return after-before; }
+  function hardDelta(g,a,b){ const ca=grid[g][a.d][a.s], cb=grid[g][b.d][b.s];
+    const before=hardCell(g,a.d,a.s)+hardCell(g,b.d,b.s);
+    grid[g][a.d][a.s]=cb; grid[g][b.d][b.s]=ca;
+    const after=hardCell(g,a.d,a.s)+hardCell(g,b.d,b.s);
+    grid[g][a.d][a.s]=ca; grid[g][b.d][b.s]=cb; return after-before; }
+  function doSwap(g,a,b){ const ca=grid[g][a.d][a.s]; grid[g][a.d][a.s]=grid[g][b.d][b.s]; grid[g][b.d][b.s]=ca; }
+  function candsFor(g,w1){ const cs=[]; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(W[s]!==w1)continue; const c2=grid[g][d][s]; if(c2&&c2.band)continue; cs.push({d,s}); } return cs; }
+  let steps=0; const maxSteps=200000;
+  while(steps<maxSteps){
+    if((steps&511)===0 && Date.now()>deadline) return null;
+    const {n,list}=hardList(); if(n===0) break;
+    const pick=list[Math.floor(rnd()*list.length)]; const g=pick.g; const w1=W[pick.s];
+    const cands=candsFor(g,w1).filter(c=>!(c.d===pick.d&&c.s===pick.s));
+    if(!cands.length){ steps++; continue; }
+    if(rnd()<0.25){ doSwap(g,pick,cands[Math.floor(rnd()*cands.length)]); }
+    else { let bd=Infinity,best=null; for(const b of cands){ const dl=swapDelta(g,pick,b); if(dl<bd-1e-9||(Math.abs(dl-bd)<1e-9&&rnd()<0.3)){bd=dl;best=b;} } if(best)doSwap(g,pick,best); }
+    steps++;
+  }
+  if(hardList().n>0) return null;
+  // PULIDO: reducir medias horas sueltas con swaps de 30 que NO creen solapes
+  let pol=0, sinMejora=0;
+  while(pol<20000 && sinMejora<400){
+    if((pol&255)===0 && Date.now()>deadline) break;
+    const sl=softList(); if(!sl.length)break;
+    const pick=sl[Math.floor(rnd()*sl.length)]; const g=pick.g;
+    const cands=candsFor(g,1).filter(c=>!(c.d===pick.d&&c.s===pick.s));
+    let bd=-1e-9, best=null;
+    for(const b of cands){ if(hardDelta(g,pick,b)>0)continue; const dl=swapDelta(g,pick,b); if(dl<bd){bd=dl;best=b;} }
+    if(best){ doSwap(g,pick,best); sinMejora=0; } else sinMejora++;
+    pol++;
+  }
+  return {grid,steps};
+}
+function gridToResultado(grid){ const NS=numTramos(); const es=buildEngineState();
+  GRUPOS.forEach(g=>{for(let d=0;d<DIAS.length;d++)for(let s=0;s<NS;s++){const c=grid[g.id][d][s]; if(c){es.grid[g.id][d][s]=c; if(c.band){occ(es,c.band.cat,d,s,1);if(c.band.ev)occ(es,c.band.ev,d,s,1);if(c.band.ae)occ(es,c.band.ae,d,s,1);}else if(c.prof)occ(es,c.prof,d,s,1);}}});
+  return es; }
+
 function runEngine(btn){
-  const tasksBase=buildTasks();
+  // PRE-CHEQUEO: ¿algún maestro se pasa de horas disponibles? (diagnóstico claro antes de calcular)
+  const ch=chequeoCargas();
+  if(ch.exceso.length){
+    btn.disabled=false; btn.textContent='⚙ Generar horarios';
+    const items=ch.exceso.map(e=>`<li><strong>${e.m.nombre}</strong> (${e.m.rol}): tiene <strong>${fmtH(e.load)} h</strong> asignadas pero solo dispone de <strong>${fmtH(e.avail)} h</strong>${(e.m.dias||e.m.tramos)?' (por su disponibilidad limitada)':''}. Sobran ${fmtH(e.load-e.avail)} h.</li>`).join('');
+    avisoGen(`<div class="notice warn">${iconWarn()}<div><strong>No cuadra: hay maestros/as con más horas de las que pueden dar.</strong><ul style="margin:6px 0 0 18px">${items}</ul><div style="margin-top:8px">Reparte alguna de sus materias a otra persona, o amplía su disponibilidad en el paso <strong>Claustro</strong>.</div></div></div>`);
+    return;
+  }
+
   let ok=false, es=null, attempts=0;
   const t0=performance.now();
-  for(let seed=1;seed<=80 && !ok;seed++){
+  for(let seed=1;seed<=60 && !ok;seed++){
     attempts++;
-    es=buildEngineState();
     const rnd=mulberry32(seed*7919+13);
-    const shared=tasksBase.shared.slice();
-    for(let i=shared.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[shared[i],shared[j]]=[shared[j],shared[i]];}
-    const deadline=Date.now()+800;
-    if(solveShared(es,shared,rnd,deadline)){
-      if(fillTutor(es,tasksBase.tutor)) ok=true;
-    }
+    const res=mcSolve(rnd, Date.now()+1200);
+    if(res){ es=gridToResultado(res.grid); ok=true; }
+    if(performance.now()-t0>9000) break;          // tope global de tiempo
   }
   const ms=Math.round(performance.now()-t0);
   btn.disabled=false; btn.textContent='⚙ Generar horarios';
   if(!ok){
-    document.getElementById('ttContainer').innerHTML='';
-    document.getElementById('genStatus').innerHTML=
-      '<div class="notice warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><div><strong>No se ha podido cuadrar sin solapes.</strong> Suele indicar que un maestro tiene más carga de la que cabe en sus días/tramos disponibles, o que la banda de religión no encaja. Revisa disponibilidades y reparto, y vuelve a intentarlo.</div></div>';
+    // diagnóstico: maestros más ajustados (al límite / con menos margen)
+    const a=analizarViabilidad();
+    const culpables=a.filas.filter(f=>f.clase!=='ok').slice(0,3);
+    let lista='';
+    if(culpables.length){
+      lista='<ul style="margin:6px 0 0 18px">'+culpables.map(f=>{
+        return `<li><strong>${f.m.nombre}</strong> — tiene ${fmtH(f.l)} h en ${fmtH(f.a)} h disponibles (margen ${fmtH(f.holg)} h)</li>`;
+      }).join('')+'</ul>';
+    }
+    const lim = ch.limite.length?`<div style="margin-top:8px">Van <strong>al límite</strong> (0 h libres): ${ch.limite.map(e=>e.m.nombre).join(', ')}.</div>`:'';
+    avisoGen(`<div class="notice warn">${iconWarn()}<div><strong>No he conseguido cuadrarlo automáticamente sin solapes.</strong> Ojo: como nadie supera sus horas, <em>no significa que sea imposible</em> — puede que se pueda cuadrar a mano. El cuello de botella está en:${lista}${lim}<div style="margin-top:8px">Para facilitarlo, reparte alguna materia de esas personas a otra (p. ej. apoyo o refuerzo) o amplía su disponibilidad. Pulsa <strong>🔍 Comprobar viabilidad</strong> para ver el detalle de cargas.</div></div></div>`);
     return;
   }
-  // volcar a state.resultado
-  unirPrimeraHora(es);
+  // volcar a state.resultado (los bloques de 60 ya vienen del motor; no hay que fusionar nada)
   state.resultado={};
   GRUPOS.forEach(g=>state.resultado[g.id]=es.grid[g.id]);
   let libres=0; const NS=numTramos();
@@ -1014,7 +1333,8 @@ function buildTasks(horas){
       const h=horas[g.id]?.[m.id]||0; if(h<=0)return;
       if(m.rol==='religion'){
         const r=state.religion[g.id]||{};
-        for(let n=0;n<h;n++) shared.push({kind:'rel',b:{g:g.id,cat:r.cat,ev:r.ev||null,ae:r.ae||state.tutores[g.id]||null}});
+        // una sola tarea = bloque contiguo de h tramos (1,5h seguidas)
+        shared.push({kind:'relblock',len:h,b:{g:g.id,cat:r.cat,ev:r.ev||null,ae:r.ae||state.tutores[g.id]||null}});
         return;
       }
       const t=state.asig[g.id]?.[m.id];
@@ -1085,11 +1405,11 @@ function cellHTML(cell,gid,d,s,editable){
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
 // Celda de la PRIMERA HORA (9:00-10:00). Si las dos medias horas coinciden → una sola celda de 1h.
 // Si difieren (p. ej. media hora de religión) → se apilan dentro de la misma franja, sin perder datos.
-function celdaPrimera(res,gid,di){
-  const a=res[di][0], b=res[di][1];
+function celdaUnida(res,gid,di,ia,ib,editable){
+  const a=res[di][ia], b=res[di][ib];
   const same = (!a&&!b) || (a&&b&&a.mat===b.mat&&a.prof===b.prof &&
       JSON.stringify(a.band||0)===JSON.stringify(b.band||0));
-  if(same) return cellHTML(a,gid,di,0,false);
+  if(same) return cellHTML(a,gid,di,ia,false);
   return `<td class="cell" style="padding:0;vertical-align:stretch">`
     + `<div style="border-bottom:1px solid var(--color-border)">${miniCelda(a)}</div>`
     + `<div>${miniCelda(b)}</div></td>`;
@@ -1113,11 +1433,11 @@ function gridGrupo(gid,editable){
   html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${r.ini}-${r.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const durBadge=r.primera?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'');
+    const durBadge=(r.primera||r.ultima)?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'');
     html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${durBadge}</td>`;
     DIAS.forEach((d,di)=>{
-      if(r.primera){ html+=celdaPrimera(res,gid,di); }
-      else html+=cellHTML(res[di][r.i],gid,di,r.i,editable&&!r.primera);
+      if(r.primera||r.ultima){ html+=celdaUnida(res,gid,di,r.i,r.i2,editable); }
+      else html+=cellHTML(res[di][r.i],gid,di,r.i,editable);
     });
     html+='</tr>';
   });
@@ -1125,7 +1445,7 @@ function gridGrupo(gid,editable){
   return html;
 }
 function gridMaestro(mid){
-  const rows=filasVista(null,true);
+  const rows=filasVista(null);
   // construir ocupación del maestro
   const occ={};
   const NS=numTramos();
@@ -1142,18 +1462,27 @@ function gridMaestro(mid){
       if(etiqueta){ occ[key(d,s)]={g:g.id,etiqueta,mat:c.mat}; }
     }
   });
+  const celdaM=(o)=>{ if(!o)return '<td class="cell empty">libre</td>';
+    const col=MAT[o.mat]?MAT[o.mat].color:'#888';
+    return `<td class="cell" style="background:${hexA(col,.16)};border-left:4px solid ${col}"><div class="m">${o.etiqueta}</div><div class="p">${GRP[o.g].nombre}</div></td>`; };
   const m=state.maestros.find(x=>x.id===mid);
   let html=`<div class="print-block"><div class="print-title">${state.centro.nombre} — Horario ${m?m.nombre:''} (${m?m.rol:''})</div>`;
   html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${r.ini}-${r.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const durBadge=r.primera?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'');
+    const durBadge=(r.primera||r.ultima)?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'');
     html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${durBadge}</td>`;
     DIAS.forEach((d,di)=>{
-      const o=occ[key(di,r.i)];
-      if(!o){html+='<td class="cell empty">libre</td>';return;}
-      const col=MAT[o.mat]?MAT[o.mat].color:'#888';
-      html+=`<td class="cell" style="background:${hexA(col,.16)};border-left:4px solid ${col}"><div class="m">${o.etiqueta}</div><div class="p">${GRP[o.g].nombre}</div></td>`;
+      if(r.primera||r.ultima){
+        const oa=occ[key(di,r.i)], ob=occ[key(di,r.i2)];
+        const same=(!oa&&!ob)||(oa&&ob&&oa.g===ob.g&&oa.etiqueta===ob.etiqueta);
+        if(same){ html+=celdaM(oa); }
+        else { html+=`<td class="cell" style="padding:0">`
+          +`<div style="border-bottom:1px solid var(--color-border)">${celdaM(oa).replace(/^<td[^>]*>/,'').replace(/<\/td>$/,'')}</div>`
+          +`<div>${celdaM(ob).replace(/^<td[^>]*>/,'').replace(/<\/td>$/,'')}</div></td>`; }
+      } else {
+        html+=celdaM(occ[key(di,r.i)]);
+      }
     });
     html+='</tr>';
   });
@@ -1230,22 +1559,22 @@ function skeletonGrid(){
    ========================================================================= */
 function buildPromptIA(){
   const c=state.centro; const L=[];
-  L.push('Actúa como experto en organización escolar de un centro de Infantil y Primaria en Andalucía (LOMLOE). Cuadra los horarios semanales SIN solapamientos y entrégalos en un DOCUMENTO WORD (.docx) descargable.');
+  L.push('Actúa como experto en organización escolar de un centro de Infantil y Primaria en Andalucía (LOMLOE). Tu tarea es CUADRAR los horarios semanales SIN ningún solapamiento y entregarlos en un DOCUMENTO WORD (.docx) descargable. Trabaja con rigor: es un problema de satisfacción de restricciones, no inventes datos.');
   L.push('');
   L.push('=== CENTRO Y JORNADA ===');
   L.push('Centro: '+(c.nombre||'(sin nombre)'));
   L.push('Días lectivos: Lunes a Viernes (mismo horario todos los días).');
-  L.push('Franjas horarias diarias:');
-  filasVista().forEach(t=>{ L.push(t.type==='recreo' ? '  · RECREO '+t.ini+'–'+t.fin : '  · '+t.ini+'–'+t.fin+' ('+(t.primera?'60':t.dur)+' min)'); });
-  L.push('La PRIMERA HORA (9:00–10:00) es una única sesión de 60 minutos; el resto son sesiones de 30 minutos.');
-  L.push('Sesiones lectivas por día: '+numTramos()+' ('+slotsSemana()+' por grupo a la semana).');
+  L.push('Franjas horarias diarias (úsalas EXACTAMENTE así, mismas filas para todos):');
+  filasVista().forEach(t=>{ L.push(t.type==='recreo' ? '  · RECREO '+t.ini+'–'+t.fin : '  · '+t.ini+'–'+t.fin+' ('+((t.primera||t.ultima)?'60':t.dur)+' min)'); });
+  L.push('IMPORTANTE: la PRIMERA sesión (9:00–10:00) y la ÚLTIMA (13:00–14:00) son de 60 minutos; las del medio son de 30 minutos.');
+  L.push('Cómputo: 22,5 h lectivas/semana por grupo. Una sesión de 60 min computa 1 h; una de 30 min computa 0,5 h.');
   L.push('');
-  L.push('=== GRUPOS (1 línea) ===');
+  L.push('=== GRUPOS ===');
   L.push(GRUPOS.map(g=>g.nombre).join(', ')+'.');
   L.push('');
-  L.push('=== SESIONES SEMANALES POR MATERIA Y GRUPO ===');
+  L.push('=== HORAS SEMANALES POR MATERIA Y GRUPO ===');
   GRUPOS.forEach(g=>{
-    const items=materiasDeEtapa(g.etapa).filter(m=>(state.horas[g.id]?.[m.id]||0)>0).map(m=>MAT[m.id].full+' ('+state.horas[g.id][m.id]+')');
+    const items=materiasDeEtapa(g.etapa).filter(m=>(state.horas[g.id]?.[m.id]||0)>0).map(m=>MAT[m.id].full+' ('+fmtH(state.horas[g.id][m.id])+' h)');
     L.push('• '+g.nombre+': '+items.join(' · '));
   });
   L.push('');
@@ -1255,9 +1584,10 @@ function buildPromptIA(){
     if(!m.dias && !m.tramos) disp='disponible todos los días, jornada completa';
     else{
       const d=m.dias?m.dias.map(x=>DIAS_LARGO[x]).join(', '):'todos los días';
-      const tr=(m.tramos&&m.tramos.length)?'; solo tramos '+m.tramos.map(x=>(x+1)+'ª').join(', '):'';
+      const tr=(m.tramos&&m.tramos.length)?'; solo sesiones '+m.tramos.map(x=>(x+1)+'ª').join(', '):'';
       disp='solo '+d+tr;
     }
+    if(m.reduccion>0) disp+='; reserva '+fmtH(Math.round(m.reduccion*2))+' h/semana NO lectivas (función directiva, coordinaciones, mayor de 55…) en las que NO da clase a ningún grupo';
     L.push('• '+m.nombre+' ('+m.rol+') — '+disp+'.');
   });
   L.push('');
@@ -1267,32 +1597,39 @@ function buildPromptIA(){
     L.push('• '+g.nombre+' (tutor/a: '+maestroNombre(state.tutores[g.id])+'): '+items.join(' · '));
   });
   L.push('');
-  L.push('=== RELIGIÓN (BANDA PARALELA) ===');
-  L.push('Cada grupo tiene su sesión de Religión en UNA ÚNICA franja semanal en la que conviven en paralelo las opciones, cada una con su maestro/a:');
+  L.push('=== RELIGIÓN / ATENCIÓN EDUCATIVA (BANDA PARALELA, EN BLOQUE) ===');
+  L.push('Cada grupo tiene su Religión en UN BLOQUE CONTIGUO de 1,5 h (p. ej. 1ª+2ª sesión, o 3ª+4ª+5ª, o 7ª+8ª), NO repartida en medias horas sueltas por la semana.');
+  L.push('En esa franja conviven en paralelo, a la vez: Católica, Evangélica (si el grupo la tiene) y Atención Educativa, cada una con su maestro/a.');
   GRUPOS.forEach(g=>{
     if((state.horas[g.id]?.REL||0)<=0)return;
     const r=state.religion[g.id]||{};
-    L.push('• '+g.nombre+' → Católica: '+(r.cat?maestroNombre(r.cat):'—')+' | Evangélica: '+(r.ev?maestroNombre(r.ev):'no aplica')+' | Atención Educativa: '+(r.ae?maestroNombre(r.ae):'—'));
+    L.push('• '+g.nombre+' → Católica: '+(r.cat?maestroNombre(r.cat):'—')+' | Evangélica: '+(r.ev?maestroNombre(r.ev):'no aplica')+' | Atención Educativa: '+(r.ae?maestroNombre(r.ae):maestroNombre(state.tutores[g.id])));
   });
+  // evangélica: días reales y grupos reales
+  const gEv=GRUPOS.filter(g=>(state.horas[g.id]?.REL||0)>0 && state.religion[g.id]?.ev);
+  if(gEv.length){
+    const evId=state.religion[gEv[0].id].ev; const evM=state.maestros.find(m=>m.id===evId);
+    const evDias=evM&&evM.dias?evM.dias.map(x=>DIAS_LARGO[x]).join('/'):'sus días disponibles';
+    L.push('La Evangélica ('+maestroNombre(evId)+') solo viene '+evDias+': las bandas de '+gEv.map(g=>g.nombre).join(', ')+' DEBEN caer en '+evDias+', cada una en una franja distinta (la misma evangélica no puede estar en dos grupos a la vez).');
+  }
   L.push('');
   L.push('=== REGLAS DE CUADRE (OBLIGATORIAS) ===');
-  L.push('1) Un mismo maestro/a NO puede estar en dos grupos a la vez (tampoco en la banda de religión).');
-  L.push('2) Cada grupo tiene una sola materia por franja; rellena TODAS las franjas lectivas.');
-  L.push('3) Respeta la disponibilidad (días y tramos) de cada maestro/a.');
-  L.push('4) La banda de religión de cada grupo ocupa una sola franja; en ella Católica, Evangélica (si aplica) y Atención Educativa son simultáneas.');
-  L.push('5) La Religión Evangélica solo se imparte los MARTES y solo en 4º, 5º y 6º: la banda de religión de esos tres grupos debe caer en martes, cada una en una franja distinta (no puede desdoblarse la evangélica).');
-  L.push('6) Conocimiento del Medio es bilingüe; respétalo con la maestra indicada para cada tramo.');
+  L.push('1) Un mismo maestro/a NO puede estar en dos grupos a la vez (tampoco en la banda de religión ni en sus horas no lectivas).');
+  L.push('2) Cada grupo tiene UNA sola materia por franja; rellena todas las franjas lectivas (si sobran, déjalas como "Refuerzo/Libre").');
+  L.push('3) Respeta la disponibilidad (días, sesiones y horas no lectivas) de cada maestro/a.');
+  L.push('4) La Religión de cada grupo es un bloque contiguo de 1,5 h; Católica + Evangélica (si aplica) + Atención Educativa son simultáneas en esa franja.');
+  L.push('5) Conocimiento del Medio es bilingüe; respeta la maestra indicada.');
+  L.push('6) Respeta el total de horas de cada materia y grupo de la lista de arriba (ni más ni menos).');
   L.push('');
-  L.push('=== PREFERENCIAS (en la medida de lo posible) ===');
-  L.push('- Lengua a primeras horas como norma general.');
-  L.push('- Matemáticas a continuación, pronto por la mañana.');
+  L.push('=== PREFERENCIAS (si es posible) ===');
+  L.push('- Lengua y Matemáticas a primeras horas de la mañana.');
   L.push('- Evita repetir la misma materia dos veces el mismo día en un grupo salvo que sea inevitable.');
   L.push('');
-  L.push('=== ENTREGABLE (DOCUMENTO WORD .docx) ===');
-  L.push('Genera un documento Word descargable, con el nombre del centro en la cabecera, que contenga:');
-  L.push('1) HORARIOS POR GRUPO: una tabla por cada uno de los '+GRUPOS.length+' grupos (filas = franjas horarias con sus horas y el recreo; columnas = Lunes a Viernes; cada celda con la materia y el/la maestro/a).');
-  L.push('2) HORARIOS POR MAESTRO/A: una tabla por cada maestro/a (su semana completa; cada celda con el grupo y la materia; franjas libres en blanco).');
-  L.push('Antes de entregar, verifica que NO haya ningún solapamiento y que se cumplan todas las reglas. Si algo no cuadra, explícalo al final.');
+  L.push('=== ENTREGABLE: DOCUMENTO WORD (.docx) DESCARGABLE ===');
+  L.push('Genera y entrégame un .docx descargable con el nombre del centro en la cabecera y, dentro:');
+  L.push('1) HORARIOS POR GRUPO: una tabla por cada uno de los '+GRUPOS.length+' grupos (filas = franjas con su hora y el recreo; columnas = Lunes a Viernes; cada celda con la materia y el/la maestro/a).');
+  L.push('2) HORARIOS POR MAESTRO/A: una tabla por cada maestro/a con su semana (cada celda con el grupo y la materia; en blanco sus franjas libres; marca sus horas no lectivas).');
+  L.push('Antes de entregar, COMPRUEBA que no haya ningún solapamiento de maestro y que se cumplan todas las reglas y los totales de horas. Si detectas que algo es imposible de cuadrar, dime exactamente qué maestro/a o materia lo impide y por qué, en lugar de inventar un horario incorrecto.');
   return L.join('\n');
 }
 function copiarTexto(text){
@@ -1358,7 +1695,8 @@ function cargarEjemplo(){
     const upper=['4','5','6'].includes(g.id);
     state.religion[g.id]={cat,ev:upper?ev:'',ae:state.tutores[g.id]};
   });
-  state.especialistas={ING:ing,EF:ef,MUS:mus,FRA:fra,CMED13:t3,CMED46:t4};
+  state.especialistas={ING:ing,EF:ef,MUS:mus,FRA:fra,CMED13:t3,CMED46:t4,REL_CAT:cat,REL_EV:ev};
+  state.evCursos=['4','5','6'];
   fillCentro(); renderMaestros(); renderAsig(); renderRel();
   go('horarios');
   document.getElementById('viewSwitch').style.display='none';
@@ -1493,6 +1831,7 @@ function init(){
   document.getElementById('mCancel').onclick=closeModal;
   document.getElementById('mOverlay').onclick=e=>{if(e.target.id==='mOverlay')closeModal();};
   document.getElementById('btnGenerar').onclick=generar;
+  document.getElementById('btnViabilidad').onclick=()=>{ if(!state.maestros.length){avisoGen('<div class="notice warn">'+iconWarn()+'<div>Primero añade el claustro y el reparto (pasos 3 y 4), o pulsa “Cargar ejemplo”.</div></div>');return;} comprobarViabilidad(); };
   document.getElementById('btnPrint').onclick=()=>window.print();
   document.getElementById('btnPrintAll').onclick=printAll;
   document.getElementById('btnSave').onclick=guardar;
