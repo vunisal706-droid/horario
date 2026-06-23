@@ -160,6 +160,9 @@ tbody tr:nth-child(even){background:#fcfcfd}
   .tt th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .cell{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .print-title{display:block!important;font-size:15px;font-weight:700;margin-bottom:6px}
+  /* Imprimir TODOS: ocultar la pantalla normal y mostrar solo el área con todos los horarios */
+  body.printing-all main > *:not(#printArea){display:none!important}
+  body.printing-all #printArea{display:block!important}
 }
 .print-title{display:none}
 </style>
@@ -171,7 +174,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 4v17M3 14h18"/></svg>
     </div>
     <div class="title">
-      <h1>Cuadra Horarios <span style="font-size:.5em;font-weight:600;color:#dc2626;background:#fee2e2;padding:2px 7px;border-radius:10px;vertical-align:middle">v12</span></h1>
+      <h1>Cuadra Horarios <span style="font-size:.5em;font-weight:600;color:#dc2626;background:#fee2e2;padding:2px 7px;border-radius:10px;vertical-align:middle">v15</span></h1>
       <p id="centroLabel">Infantil y Primaria · Andalucía</p>
     </div>
     <div class="head-actions">
@@ -278,7 +281,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
         </div>
       </div>
     </div>
-    <div class="card no-print" id="printArea" style="display:none"></div>
+    <div class="card" id="printArea" style="display:none"></div>
   </section>
 </main>
 
@@ -1202,29 +1205,57 @@ function mcSolve(rnd,deadline){
       if(!chosen)chosen=cands[0];
       grid[g.id][cell.d][cell.s]={mat:chosen,prof:prof[chosen]}; rem[chosen]-=2; return true; }
     slot0.forEach(c=>pick60(c,true)); slotN.forEach(c=>pick60(c,false));
-    // slots de 30 con el resto
+    // slots de 30: agrupar en PARES contiguos (bloques de 1h) por día; las medias impares aparte
+    const contig=(a,b)=>(b===a+1)&&!(a===4&&b===5); // 12:00→12:30 hay recreo: slot4 y slot5 no son contiguos
+    const pares=[], medias=[];
+    for(let d=0;d<ND;d++){
+      const ls=libres30.filter(c=>c.d===d).map(c=>c.s).sort((a,b)=>a-b);
+      let i=0; while(i<ls.length){ if(i+1<ls.length && contig(ls[i],ls[i+1])){ pares.push([{d,s:ls[i]},{d,s:ls[i+1]}]); i+=2; } else { medias.push({d,s:ls[i]}); i++; } }
+    }
+    for(let k=pares.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[pares[k],pares[j]]=[pares[j],pares[k]];}
+    // asignar cada par de 1h a una materia con >=2 medias, evitando repetir materia el día
+    pares.forEach(par=>{
+      let cands=Object.keys(rem).filter(m=>rem[m]>=2);
+      if(!cands.length){ cands=Object.keys(rem).filter(m=>rem[m]>0); if(!cands.length)return; }
+      cands.sort((a,b)=>rem[b]-rem[a]);
+      let chosen=cands.find(m=>{ for(let s=0;s<NS;s++){const c=grid[g.id][par[0].d][s]; if(c&&c.mat===m)return false;} return true; })||cands[0];
+      const take=Math.min(2,rem[chosen]);
+      grid[g.id][par[0].d][par[0].s]={mat:chosen,prof:prof[chosen]};
+      if(take===2){ grid[g.id][par[1].d][par[1].s]={mat:chosen,prof:prof[chosen]}; rem[chosen]-=2; }
+      else { rem[chosen]-=1; medias.push(par[1]); } // solo quedaba 1 media de esa materia: la 2ª celda pasa a medias
+    });
+    // medias impares: preferir la misma materia que el slot6 de ese día (forma bloque de 1,5h en 12:30-14:00)
     const pend=[]; Object.keys(rem).forEach(m=>{ for(let k=0;k<rem[m];k++)pend.push(m); rem[m]=0; });
     for(let k=pend.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[pend[k],pend[j]]=[pend[j],pend[k]];}
-    libres30.forEach((cell,idx)=>{ const m=pend[idx]; if(m)grid[g.id][cell.d][cell.s]={mat:m,prof:prof[m]}; });
+    medias.forEach(cell=>{
+      if(!pend.length)return; let idx=0;
+      if(cell.s===5){ const c6=grid[g.id][cell.d][6]; if(c6&&!c6.band){ const k=pend.indexOf(c6.mat); if(k>=0)idx=k; } }
+      const m=pend.splice(idx,1)[0]; grid[g.id][cell.d][cell.s]={mat:m,prof:prof[m]};
+    });
   }
-  // 3) MIN-CONFLICTS (resolver solapes) + PULIDO (agrupar medias horas en bloques, evitar 30 min sueltos)
-  const contigPrev=s=>!(s===5), contigNext=s=>!(s===4); // 12:00→12:30 hay recreo: slot4 y slot5 NO son contiguos
+  // 3) MIN-CONFLICTS (resolver solapes) + PULIDO (agrupar en bloques, evitar 30 min sueltos)
   function fragOf(g,d,s){ if(W[s]!==1)return 0; const c=grid[g][d][s]; if(!c||c.band)return 0;
-    const prev=(s>0&&contigPrev(s))?grid[g][d][s-1]:null, next=(s<NS-1&&contigNext(s))?grid[g][d][s+1]:null;
+    const prev=(s>0&&s!==5)?grid[g][d][s-1]:null;        // slot5 NO es contiguo con slot4 (recreo en medio)
+    const next=(s<NS-1&&s!==4)?grid[g][d][s+1]:null;     // slot5 SÍ es contiguo con slot6 (12:30-14:00 = 1,5h)
     const okP=prev&&!prev.band&&prev.mat===c.mat, okN=next&&!next.band&&next.mat===c.mat;
     return (okP||okN)?0:1; }
   function hardCell(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0; let cost=0; const p=c.prof;
     if(p&&!mcAvail(p,d,s))cost+=2;
     if(p){ for(const g2 of GRUPOS){ if(g2.id===g)continue; const c2=grid[g2.id][d][s]; if(!c2)continue; const pp=c2.band?[c2.band.cat,c2.band.ev,c2.band.ae]:[c2.prof]; if(pp.indexOf(p)>=0)cost+=1; } }
     return cost; }
-  function softCell(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0; let so=0.1*fragOf(g,d,s);
-    if(c.mat==='LEN'||c.mat==='MAT'||c.mat==='GLO'){ if(s!==0)so+=0.02; // preferir 1ª hora
+  function runsDe(g,d,mat){ let runs=0,prev=false; for(let s=0;s<NS;s++){ if(s===5)prev=false; const c=grid[g][d][s]; const is=c&&!c.band&&c.mat===mat; if(is&&!prev)runs++; prev=is; } return runs; }
+  function softCell(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0; let so=0.3*fragOf(g,d,s);
+    if((c.mat==='ING'||c.mat==='EF'||c.mat==='MUS'||c.mat==='FRA'||c.mat==='CMED'||c.mat==='ART') && runsDe(g,d,c.mat)>1) so+=0.5; // especialidad PARTIDA en el día (cambio de aula/material): evitar
+    if(s===5){ const c6=grid[g][d][6]; if(c6&&!c6.band&&c6.mat!==c.mat)so+=0.15; } // tarde 12:30-14 = bloque 1,5h
+    if(c.mat==='LEN'||c.mat==='MAT'||c.mat==='GLO'){
+      if(s!==0)so+=0.02;                              // troncales: preferir 1ª hora
+      if(c.mat==='MAT'&&s===0)so+=0.07;               // entre Lengua y Mates, LENGUA primero
       let cnt=0; for(let s2=0;s2<NS;s2++){const cc=grid[g][d][s2]; if(cc&&!cc.band&&cc.mat===c.mat)cnt+=W[s2];}
-      if(cnt>3)so+=0.25*(cnt-3); } // más de 1,5h de la misma troncal en un día penaliza (favorece repartir)
+      if(cnt>3)so+=0.25*(cnt-3); }                    // >1,5h de la misma troncal/día (favorece repartir)
     return so; }
   function cellCost(g,d,s){ return hardCell(g,d,s)+softCell(g,d,s); }
   function hardList(){ let n=0,list=[]; GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){const cc=hardCell(g.id,d,s); if(cc>=1){n+=cc; list.push({g:g.id,d,s});}}}); return {n,list}; }
-  function softList(){ let list=[]; GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){if(fragOf(g.id,d,s)>0)list.push({g:g.id,d,s});}}); return list; }
+  function softList(){ let list=[]; GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){if(W[s]===1 && softCell(g.id,d,s)>0.01)list.push({g:g.id,d,s});}}); return list; }
   function swapDelta(g,a,b){ const ca=grid[g][a.d][a.s], cb=grid[g][b.d][b.s];
     // delta de coste local (las 2 celdas) — incluye su efecto en otros grupos vía hardCell
     const before=cellCost(g,a.d,a.s)+cellCost(g,b.d,b.s);
@@ -1246,21 +1277,28 @@ function mcSolve(rnd,deadline){
     const cands=candsFor(g,w1).filter(c=>!(c.d===pick.d&&c.s===pick.s));
     if(!cands.length){ steps++; continue; }
     if(rnd()<0.25){ doSwap(g,pick,cands[Math.floor(rnd()*cands.length)]); }
-    else { let bd=Infinity,best=null; for(const b of cands){ const dl=swapDelta(g,pick,b); if(dl<bd-1e-9||(Math.abs(dl-bd)<1e-9&&rnd()<0.3)){bd=dl;best=b;} } if(best)doSwap(g,pick,best); }
+    else { // priorizar SIEMPRE reducir solapes (hard); entre iguales, el que menos fragmente (soft)
+      let best=null,bH=Infinity,bS=Infinity;
+      for(const b of cands){ const h=hardDelta(g,pick,b); const s=swapDelta(g,pick,b);
+        if(h<bH-1e-9 || (Math.abs(h-bH)<1e-9 && (s<bS-1e-9 || (Math.abs(s-bS)<1e-9&&rnd()<0.3)))){ bH=h;bS=s;best=b; } }
+      if(best)doSwap(g,pick,best); }
     steps++;
   }
   if(hardList().n>0) return null;
-  // PULIDO: reducir medias horas sueltas con swaps de 30 que NO creen solapes
-  let pol=0, sinMejora=0;
-  while(pol<20000 && sinMejora<400){
-    if((pol&255)===0 && Date.now()>deadline) break;
-    const sl=softList(); if(!sl.length)break;
-    const pick=sl[Math.floor(rnd()*sl.length)]; const g=pick.g;
-    const cands=candsFor(g,1).filter(c=>!(c.d===pick.d&&c.s===pick.s));
-    let bd=-1e-9, best=null;
-    for(const b of cands){ if(hardDelta(g,pick,b)>0)continue; const dl=swapDelta(g,pick,b); if(dl<bd){bd=dl;best=b;} }
-    if(best){ doSwap(g,pick,best); sinMejora=0; } else sinMejora++;
-    pol++;
+  // PULIDO: reducir medias horas sueltas. Pasadas sistemáticas sobre TODAS las sueltas; swaps de 30 que no creen solapes.
+  let mejoro=true, pasadas=0;
+  while(mejoro && pasadas<60){
+    if(Date.now()>deadline)break;
+    mejoro=false; pasadas++;
+    const sl=softList();
+    for(const pick of sl){
+      const g=pick.g;
+      if(fragOf(g,pick.d,pick.s)===0 && softCell(g,pick.d,pick.s)<0.01)continue; // ya resuelta en esta pasada
+      const cands=candsFor(g,1).filter(c=>!(c.d===pick.d&&c.s===pick.s));
+      let bd=-1e-6, best=null;
+      for(const b of cands){ if(hardDelta(g,pick,b)>0)continue; const dl=swapDelta(g,pick,b); if(dl<bd){bd=dl;best=b;} }
+      if(best){ doSwap(g,pick,best); mejoro=true; }
+    }
   }
   return {grid,steps};
 }
@@ -1283,7 +1321,7 @@ function runEngine(btn){
   for(let seed=1;seed<=60 && !ok;seed++){
     attempts++;
     const rnd=mulberry32(seed*7919+13);
-    const res=mcSolve(rnd, Date.now()+1200);
+    const res=mcSolve(rnd, Date.now()+2800);
     if(res){ es=gridToResultado(res.grid); ok=true; }
     if(performance.now()-t0>9000) break;          // tope global de tiempo
   }
@@ -1537,13 +1575,15 @@ function swapValido(gid,a,b,ca,cb){
   return true;
 }
 function printAll(){
+  if(!state.resultado || !Object.keys(state.resultado).length){ toast('Primero genera un horario'); return; }
   const area=document.getElementById('printArea');
   let html='';
-  GRUPOS.forEach(g=>{ html+=gridGrupo(g.id,false); });
+  GRUPOS.forEach(g=>{ if(state.resultado[g.id]) html+=gridGrupo(g.id,false); });
   state.maestros.filter(maestroDaClase).forEach(m=>{ html+=gridMaestro(m.id); });
   area.innerHTML=html; area.style.display='block';
+  document.body.classList.add('printing-all');
   window.print();
-  setTimeout(()=>{area.style.display='none';area.innerHTML='';},500);
+  setTimeout(()=>{ document.body.classList.remove('printing-all'); area.style.display='none'; area.innerHTML=''; },800);
 }
 function skeletonGrid(){
   let h='<table class="tt"><tbody>';
