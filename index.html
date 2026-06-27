@@ -208,7 +208,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 4v17M3 14h18"/></svg>
     </div>
     <div class="title">
-      <h1>Cuadra Horarios <span style="font-size:.5em;font-weight:600;color:#dc2626;background:#fee2e2;padding:2px 7px;border-radius:10px;vertical-align:middle">v31</span></h1>
+      <h1>Cuadra Horarios <span style="font-size:.5em;font-weight:600;color:#dc2626;background:#fee2e2;padding:2px 7px;border-radius:10px;vertical-align:middle">v32</span></h1>
       <p id="centroLabel">Infantil y Primaria · Andalucía</p>
     </div>
     <div class="head-actions">
@@ -2436,7 +2436,14 @@ init();
 
 // PWA service worker (funciona en GitHub Pages; en sandbox simplemente se ignora)
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});
+  let recargando=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(recargando)return; recargando=true; location.reload(); }); // versión nueva activa → recarga una vez
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      reg.update&&reg.update();
+      setInterval(()=>{reg.update&&reg.update();}, 60000); // busca versión nueva cada minuto
+    }).catch(()=>{});
+  });
 }
 </script>
 </body>
