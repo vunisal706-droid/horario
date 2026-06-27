@@ -208,7 +208,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 4v17M3 14h18"/></svg>
     </div>
     <div class="title">
-      <h1>Cuadra Horarios <span style="font-size:.5em;font-weight:600;color:#dc2626;background:#fee2e2;padding:2px 7px;border-radius:10px;vertical-align:middle">v32</span></h1>
+      <h1>Cuadra Horarios <span style="font-size:.5em;font-weight:600;color:#dc2626;background:#fee2e2;padding:2px 7px;border-radius:10px;vertical-align:middle">v34</span></h1>
       <p id="centroLabel">Infantil y Primaria · Andalucía</p>
     </div>
     <div class="head-actions">
@@ -1441,7 +1441,9 @@ function iconWarn(){return '<svg viewBox="0 0 24 24" fill="none" stroke="current
 // ===== MOTOR PRINCIPAL: min-conflicts (búsqueda local con reparación) =====
 // Replica el método manual: coloca religión en bloques, llena el resto y va moviendo lo que choca.
 function mcAvail(p,d,s){ const m=state.maestros.find(x=>x.id===p); if(!m)return true; if(m.dias&&!m.dias.includes(DIAS[d]))return false; if(m.tramos&&m.tramos.length&&!m.tramos.includes(s))return false; return true; }
+let mcRelFail=null;
 function mcSolve(rnd,deadline){
+  mcRelFail=null;
   const ND=DIAS.length, W=pesosSlot(), NS=W.length, segs=segmentos();
   const grid={}; GRUPOS.forEach(g=>{grid[g.id]=[];for(let d=0;d<ND;d++)grid[g.id][d]=new Array(NS).fill(null);});
   const busyAt=(p,d,s)=>{ for(const g of GRUPOS){const c=grid[g.id][d][s]; if(!c)continue; if(c.band){if(c.band.cat===p||c.band.ev===p||c.band.ae===p)return true;}else if(c.prof===p)return true;} return false; };
@@ -1468,7 +1470,11 @@ function mcSolve(rnd,deadline){
     for(const o of bOpts){ for(const s of o.ss)grid[t.g][o.d][s]={mat:'REL',prof:t.cat,band:{cat:t.cat,ev:t.ev,ae:t.ae}};
       if(placeRel(rest))return true; for(const s of o.ss)grid[t.g][o.d][s]=null; }
     return false; }
-  if(!placeRel(relTasks.slice())) return null;
+  if(!placeRel(relTasks.slice())){
+    let peor=null,min=1e9; for(const t of relTasks){ const n=relOptsDe(t).length; if(n<min){min=n;peor=t;} }   // ¿qué banda se queda sin hueco?
+    mcRelFail={grupo:peor?peor.g:null, opciones:min, cat:peor?peor.cat:null, ev:peor?peor.ev:null, ae:peor?peor.ae:null};
+    return null;
+  }
   // 2) RELLENO (respeta pesos). Slots de 60 → materias con ≥2 medias horas restantes (preferir Lengua/Mates/GLO
   //    en la 1ª hora). Slots de 30 → el resto. Greedy "mayor resto primero" para no dejar medias horas descuadradas.
   const TRONCAL=m=>(m==='LEN'||m==='MAT'||m==='GLO');
@@ -1476,11 +1482,42 @@ function mcSolve(rnd,deadline){
   // Religión va antes (ya colocada). Luego: Música → Conocimiento → Inglés → EF → Plástica → Francés. Troncales (del tutor) a media altura.
   const PRIO=m=>{ if(m==='MUS')return 6; if(m==='CMED')return 5; if(m==='ING')return 4; if(m==='EF')return 3; if(m==='ART')return 2; if(m==='FRA')return 1; if(TRONCAL(m))return 3.5; return 0.5; };
   const ESP=m=>(m==='ING'||m==='EF'||m==='MUS'||m==='FRA'||m==='CMED'||m==='ART');
+  // 2.0) COLOCACIÓN COORDINADA DE ESPECIALISTAS: música, inglés, EF, francés, plástica-especialista y conocimiento se colocan
+  //      PRIMERO mirando a todo el centro, para que cada especialista no acabe en dos cursos a la vez (la maraña que la
+  //      búsqueda local no sabe deshacer cuando alguien da clase a muchos grupos, p. ej. música de todo el cole).
+  function profLibreG(p,d,s){ if(!p)return true; for(const g of GRUPOS){ const c=grid[g.id][d][s]; if(!c)continue; if(c.band){ if(c.band.cat===p||c.band.ev===p||c.band.ae===p)return false; } else if(c.prof===p)return false; } return true; }
+  (function colocarEspecialistas(){
+    const gruposDe={};
+    for(const g of GRUPOS){ const ps=new Set(); materiasDeEtapa(g.etapa).forEach(m=>{ if(m.rol==='religion')return; const p=state.asig[g.id]?.[m.id]; if(p&&(state.horas[g.id]?.[m.id]||0)>0)ps.add(p); }); ps.forEach(p=>{(gruposDe[p]=gruposDe[p]||new Set()).add(g.id);}); }
+    const clases=[];
+    for(const g of GRUPOS){ materiasDeEtapa(g.etapa).forEach(m=>{ if(m.rol==='religion')return; const h=state.horas[g.id]?.[m.id]||0; if(h<=0)return; const p=state.asig[g.id]?.[m.id]; if(!p)return; if(!gruposDe[p]||gruposDe[p].size<=1)return; clases.push({g:g.id,mat:m.id,prof:p,medias:h}); }); }  // solo quien da clase en >1 curso (los que pueden chocar consigo mismos)
+    const carga={}; clases.forEach(c=>carga[c.prof]=(carga[c.prof]||0)+c.medias);
+    clases.sort((a,b)=>(carga[b.prof]-carga[a.prof])||(b.medias-a.medias)||(PRIO(b.mat)-PRIO(a.mat)));   // el maestro/a más cargado coloca primero
+    const libres=(arr)=>{for(let k=arr.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[arr[k],arr[j]]=[arr[j],arr[k]];}return arr;};
+    const snap=()=>{const o={};GRUPOS.forEach(g=>o[g.id]=grid[g.id].map(r=>r.slice()));return o;};
+    const restore=o=>{GRUPOS.forEach(g=>grid[g.id]=o[g.id].map(r=>r.slice()));};
+    const base=snap();                                  // estado con SOLO la religión
+    let mejorSC=Infinity, mejorSnap=null;
+    for(let intento=0;intento<40;intento++){
+      restore(base);                                    // limpia y reparte de nuevo
+      let sc=0;
+      for(const cl of clases){ let rem=cl.medias;
+        const put1h=()=>{ const c=[]; for(let d=0;d<ND;d++)for(const s of [0,6]){ if(W[s]!==2||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } if(!c.length)return false; const x=libres(c)[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
+        const putPar=()=>{ const c=[]; for(let d=0;d<ND;d++)for(const [a,b] of [[1,2],[3,4]]){ if(grid[cl.g][d][a]||grid[cl.g][d][b])continue; if(!mcAvail(cl.prof,d,a)||!mcAvail(cl.prof,d,b)||!profLibreG(cl.prof,d,a)||!profLibreG(cl.prof,d,b))continue; c.push([{d,s:a},{d,s:b}]); } if(!c.length)return false; const x=libres(c)[0]; grid[cl.g][x[0].d][x[0].s]={mat:cl.mat,prof:cl.prof}; grid[cl.g][x[1].d][x[1].s]={mat:cl.mat,prof:cl.prof}; return true; };
+        const put30=()=>{ const c=[]; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(W[s]!==1||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } if(!c.length)return false; const x=libres(c)[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
+        while(rem>=2){ if(put1h()){rem-=2;continue;} if(putPar()){rem-=2;continue;} break; }
+        while(rem>=1){ if(put30()){rem-=1;continue;} break; }
+        sc+=rem;                                         // medias que no cupieron
+      }
+      if(sc<mejorSC){ mejorSC=sc; mejorSnap=snap(); if(sc===0)break; }
+    }
+    if(mejorSnap)restore(mejorSnap);                    // quédate con el mejor reparto de especialistas
+  })();
   for(const g of GRUPOS){
     const libres60=[], libres30=[];
     for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(grid[g.id][d][s])continue; (W[s]===2?libres60:libres30).push({d,s}); }
     const rem={}, prof={};
-    materiasDeEtapa(g.etapa).forEach(m=>{ if(m.rol==='religion')return; const h=state.horas[g.id]?.[m.id]||0; if(h>0){rem[m.id]=h;prof[m.id]=state.asig[g.id]?.[m.id];} });
+    materiasDeEtapa(g.etapa).forEach(m=>{ if(m.rol==='religion')return; const h=state.horas[g.id]?.[m.id]||0; if(h<=0)return; let puesto=0; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){const c=grid[g.id][d][s]; if(c&&!c.band&&c.mat===m.id)puesto+=W[s];} const falta=h-puesto; if(falta>0){rem[m.id]=falta;prof[m.id]=state.asig[g.id]?.[m.id];} });
     const slot0=libres60.filter(c=>c.s===0), slotN=libres60.filter(c=>c.s!==0);
     for(let k=slot0.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[slot0[k],slot0[j]]=[slot0[j],slot0[k]];}
     for(let k=slotN.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[slotN[k],slotN[j]]=[slotN[j],slotN[k]];}
@@ -1562,10 +1599,20 @@ function mcSolve(rnd,deadline){
     grid[g][a.d][a.s]=ca; grid[g][b.d][b.s]=cb; return after-before; }
   function doSwap(g,a,b){ const ca=grid[g][a.d][a.s]; grid[g][a.d][a.s]=grid[g][b.d][b.s]; grid[g][b.d][b.s]=ca; }
   function candsFor(g,w1){ const cs=[]; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(W[s]!==w1)continue; const c2=grid[g][d][s]; if(c2&&c2.band)continue; cs.push({d,s}); } return cs; }
-  let steps=0; const maxSteps=200000;
+  let steps=0; const maxSteps=400000;
+  let bestN=Infinity, bestSnap=null, stall=0;
+  const snap=()=>{ const o={}; GRUPOS.forEach(g=>o[g.id]=grid[g.id].map(r=>r.slice())); return o; };
+  const restore=o=>{ GRUPOS.forEach(g=>grid[g.id]=o[g.id].map(r=>r.slice())); };
   while(steps<maxSteps){
-    if((steps&511)===0 && Date.now()>deadline) return null;
+    if((steps&511)===0 && Date.now()>deadline) break;
     const {n,list}=hardList(); if(n===0) break;
+    if(n<bestN){ bestN=n; bestSnap=snap(); stall=0; } else stall++;
+    if(stall>1200){ // ESTANCADO en un mínimo local (típico con un maestro/a casi saturado, p. ej. quien da música a todo el centro): sacudida para reorganizar
+      restore(bestSnap||snap());                  // parte del mejor estado visto
+      for(let k=0;k<10;k++){ const it = list.length?list[Math.floor(rnd()*list.length)]:{g:GRUPOS[Math.floor(rnd()*GRUPOS.length)].id,d:Math.floor(rnd()*ND),s:1+Math.floor(rnd()*4)};
+        const cs=candsFor(it.g,W[it.s]).filter(c=>!(c.d===it.d&&c.s===it.s)); if(cs.length)doSwap(it.g,it,cs[Math.floor(rnd()*cs.length)]); }
+      stall=0; steps++; continue;
+    }
     // sesgo "difíciles primero" (método de Víctor): repara antes las especialidades más atadas, que cogen los huecos buenos
     let pick;
     if(rnd()<0.7){ let best=null,bp=-1; for(const it of list){ const c=grid[it.g][it.d][it.s]; const pr=c&&!c.band?PRIO(c.mat):0; if(pr>bp || (pr===bp && rnd()<0.4)){bp=pr;best=it;} } pick=best; }
@@ -1581,6 +1628,7 @@ function mcSolve(rnd,deadline){
       if(best)doSwap(g,pick,best); }
     steps++;
   }
+  if(hardList().n>0 && bestSnap){ restore(bestSnap); }   // quédate con el mejor estado alcanzado
   if(hardList().n>0) return null;
   // PULIDO: reducir medias horas sueltas. Pasadas sistemáticas sobre TODAS las sueltas; swaps de 30 que no creen solapes.
   let mejoro=true, pasadas=0;
@@ -1660,6 +1708,16 @@ function runEngine(btn){
   const ms=Math.round(performance.now()-t0);
   btn.disabled=false; btn.textContent='⚙ Generar horarios';
   if(!ok){
+    // Si el motor nunca pasó de la religión, el problema es la BANDA de religión (no las cargas)
+    if(mcRelFail){
+      const gn=mcRelFail.grupo&&GRP[mcRelFail.grupo]?GRP[mcRelFail.grupo].nombre:'algún curso';
+      const nm=id=>id?maestroNombre(id):'—';
+      const causa = mcRelFail.opciones===0
+        ? `La banda de <strong>${gn}</strong> no tiene ningún hueco posible: entre la Católica (${nm(mcRelFail.cat)}), la Evangélica (${nm(mcRelFail.ev)}) y la Atención Educativa (${nm(mcRelFail.ae)}) no coinciden en ningún día/hora libres. Casi siempre es porque alguna de esas tres personas tiene <strong>pocos días o tramos</strong> marcados en el paso <strong>Claustro</strong>.`
+        : `Las bandas de religión no caben todas juntas. Suele pasar cuando varias dependen del <strong>mismo día</strong> (p. ej. la evangélica solo viene un día) y no entran las tres de ese día sin pisarse.`;
+      avisoGen(`<div class="notice warn">${iconWarn()}<div><strong>No consigo encajar la <u>banda de religión</u>.</strong> ${causa}<div style="margin-top:8px">Revisa en <strong>Claustro</strong> los <strong>días y tramos</strong> de quien da Católica, Evangélica y Atención Educativa, y en <strong>Asignación</strong> que cada curso tenga bien puesta su persona de Atención Educativa. Si quieres que lo mire yo, usa <strong>Guardar</strong> y pásame ese archivo.</div></div></div>`);
+      return;
+    }
     // diagnóstico: maestros más ajustados (al límite / con menos margen)
     const a=analizarViabilidad();
     const culpables=a.filas.filter(f=>f.clase!=='ok').slice(0,3);
