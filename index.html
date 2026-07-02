@@ -178,6 +178,29 @@ tbody tr:nth-child(even){background:#fcfcfd}
 
 .skeleton{background:linear-gradient(90deg,#f1f5f9 25%,#e6e8ee 50%,#f1f5f9 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:6px;height:54px}
 @keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+/* --- Progreso del motor --- */
+.gen-progress{background:#fff;border:1px solid var(--color-border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow-sm)}
+.gen-progress .gp-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.gen-progress .gp-title{font-weight:700;font-size:14px}
+.gen-progress .gp-stat{font-size:12px;color:var(--color-text-muted);font-variant-numeric:tabular-nums}
+.gp-bar{height:8px;background:#f1f5f9;border-radius:99px;overflow:hidden;margin-top:10px}
+.gp-fill{height:100%;width:0%;border-radius:99px;background:linear-gradient(90deg,var(--color-primary),var(--color-secondary));transition:width .25s ease}
+.gp-phase{font-size:12px;color:var(--color-text-muted);margin-top:8px;display:flex;align-items:center;gap:6px}
+.gp-phase .dot{width:7px;height:7px;border-radius:50%;background:var(--color-primary);animation:gpBlink 1s infinite}
+@keyframes gpBlink{0%,100%{opacity:1}50%{opacity:.25}}
+/* --- Informe de calidad --- */
+.qr-panel{background:#fff;border:1px solid var(--color-border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow-sm)}
+.qr-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.qr-head h3{font-size:14px;margin:0}
+.qr-score{font-weight:800;font-size:18px;padding:4px 12px;border-radius:99px}
+.qr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.qr-item{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--color-surface);border:1px solid var(--color-border)}
+.qr-item .ic{flex-shrink:0;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;margin-top:1px}
+.qr-item.ok .ic{background:var(--color-success)} .qr-item.warn .ic{background:var(--color-warning)} .qr-item.bad .ic{background:var(--color-error)}
+.qr-item .tx b{display:block;font-size:12.5px} .qr-item .tx span{color:var(--color-text-muted);font-size:11.5px}
+.cell.conflict{box-shadow:inset 0 0 0 3px var(--color-error);animation:confPulse 1.6s infinite}
+@keyframes confPulse{0%,100%{box-shadow:inset 0 0 0 3px var(--color-error)}50%{box-shadow:inset 0 0 0 3px rgba(220,38,38,.35)}}
+@media (prefers-reduced-motion: reduce){.gp-fill{transition:none}.gp-phase .dot,.cell.conflict{animation:none}}
 
 .empty-state{text-align:center;padding:40px 20px;color:var(--color-text-muted)}
 .empty-state svg{width:48px;height:48px;opacity:.4;margin-bottom:10px}
@@ -1494,17 +1517,40 @@ function mcSolve(rnd,deadline){
     const carga={}; clases.forEach(c=>carga[c.prof]=(carga[c.prof]||0)+c.medias);
     clases.sort((a,b)=>(carga[b.prof]-carga[a.prof])||(b.medias-a.medias)||(PRIO(b.mat)-PRIO(a.mat)));   // el maestro/a más cargado coloca primero
     const libres=(arr)=>{for(let k=arr.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[arr[k],arr[j]]=[arr[j],arr[k]];}return arr;};
+    // CLAVE anti-"imposible": si el/la tutor/a del grupo NO puede estar en una celda (p. ej. no viene los viernes),
+    // esa celda SOLO puede cubrirla un especialista → los especialistas deben ocuparlas con prioridad.
+    const tutorFuera=(g,d,s)=>{const t=state.tutores[g];return !!t&&!mcAvail(t,d,s);};
+    const conPref=(g,c)=>{const pref=c.filter(x=>Array.isArray(x)?x.every(y=>tutorFuera(g,y.d,y.s)):tutorFuera(g,x.d,x.s));return pref.length?pref:c;};
     const snap=()=>{const o={};GRUPOS.forEach(g=>o[g.id]=grid[g.id].map(r=>r.slice()));return o;};
     const restore=o=>{GRUPOS.forEach(g=>grid[g.id]=o[g.id].map(r=>r.slice()));};
     const base=snap();                                  // estado con SOLO la religión
+    // Celdas que el tutor NO puede cubrir (solo pueden darlas los especialistas): hay que llenarlas PRIMERO,
+    // al principio de cada intento, cuando los especialistas aún tienen todos sus huecos libres.
+    const pendCover=[];
+    for(const g of GRUPOS){ const t=state.tutores[g.id]; if(!t)continue;
+      const mT=state.maestros.find(x=>x.id===t); if(!mT||(!mT.dias&&!(mT.tramos&&mT.tramos.length)))continue;
+      for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(base[g.id][d][s])continue; if(!mcAvail(t,d,s))pendCover.push({g:g.id,d,s}); } }
+    pendCover.sort((a,b)=>W[b.s]-W[a.s]);               // las celdas de 1h primero (más difíciles)
     let mejorSC=Infinity, mejorSnap=null;
     for(let intento=0;intento<40;intento++){
       restore(base);                                    // limpia y reparte de nuevo
       let sc=0;
-      for(const cl of clases){ let rem=cl.medias;
-        const put1h=()=>{ const c=[]; for(let d=0;d<ND;d++)for(const s of [0,6]){ if(W[s]!==2||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } if(!c.length)return false; const x=libres(c)[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
-        const putPar=()=>{ const c=[]; for(let d=0;d<ND;d++)for(const [a,b] of [[1,2],[3,4]]){ if(grid[cl.g][d][a]||grid[cl.g][d][b])continue; if(!mcAvail(cl.prof,d,a)||!mcAvail(cl.prof,d,b)||!profLibreG(cl.prof,d,a)||!profLibreG(cl.prof,d,b))continue; c.push([{d,s:a},{d,s:b}]); } if(!c.length)return false; const x=libres(c)[0]; grid[cl.g][x[0].d][x[0].s]={mat:cl.mat,prof:cl.prof}; grid[cl.g][x[1].d][x[1].s]={mat:cl.mat,prof:cl.prof}; return true; };
-        const put30=()=>{ const c=[]; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(W[s]!==1||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } if(!c.length)return false; const x=libres(c)[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
+      const remMap=clases.map(c=>c.medias);
+      // 0) cubrir ausencias del tutor con clases de especialistas del propio grupo
+      for(const cell of pendCover){
+        const idxs=[]; for(let i=0;i<clases.length;i++){ if(clases[i].g===cell.g&&remMap[i]>=W[cell.s])idxs.push(i); }
+        for(let k=idxs.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[idxs[k],idxs[j]]=[idxs[j],idxs[k]];}
+        let done=false;
+        for(const i of idxs){ const cl=clases[i];
+          if(!mcAvail(cl.prof,cell.d,cell.s)||!profLibreG(cl.prof,cell.d,cell.s))continue;
+          grid[cl.g][cell.d][cell.s]={mat:cl.mat,prof:cl.prof}; remMap[i]-=W[cell.s]; done=true; break; }
+        if(!done)sc+=W[cell.s]*3;                       // celda sin cubrir: penaliza fuerte este intento
+      }
+      // 1) repartir el resto de clases de especialistas
+      for(let ci=0;ci<clases.length;ci++){ const cl=clases[ci]; let rem=remMap[ci];
+        const put1h=()=>{ const c=[]; for(let d=0;d<ND;d++)for(const s of [0,6]){ if(W[s]!==2||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
+        const putPar=()=>{ const c=[]; for(let d=0;d<ND;d++)for(const [a,b] of [[1,2],[3,4]]){ if(grid[cl.g][d][a]||grid[cl.g][d][b])continue; if(!mcAvail(cl.prof,d,a)||!mcAvail(cl.prof,d,b)||!profLibreG(cl.prof,d,a)||!profLibreG(cl.prof,d,b))continue; c.push([{d,s:a},{d,s:b}]); } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x[0].d][x[0].s]={mat:cl.mat,prof:cl.prof}; grid[cl.g][x[1].d][x[1].s]={mat:cl.mat,prof:cl.prof}; return true; };
+        const put30=()=>{ const c=[]; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(W[s]!==1||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
         while(rem>=2){ if(put1h()){rem-=2;continue;} if(putPar()){rem-=2;continue;} break; }
         while(rem>=1){ if(put30()){rem-=1;continue;} break; }
         sc+=rem;                                         // medias que no cupieron
@@ -1512,6 +1558,33 @@ function mcSolve(rnd,deadline){
       if(sc<mejorSC){ mejorSC=sc; mejorSnap=snap(); if(sc===0)break; }
     }
     if(mejorSnap)restore(mejorSnap);                    // quédate con el mejor reparto de especialistas
+  })();
+  // CUBRIR AUSENCIAS DEL TUTOR (clave anti-"imposible"): si queda un hueco en una celda donde el/la tutor/a
+  // NO puede estar (p. ej. no viene los viernes), ese hueco solo puede cubrirlo un especialista. Traemos una
+  // clase de especialista del grupo desde otro día; el hueco se muda a un día donde el tutor sí está.
+  (function cubrirAusencias(){
+    for(const g of GRUPOS){
+      const tut=state.tutores[g.id]; if(!tut)continue;
+      const mTut=state.maestros.find(x=>x.id===tut);
+      if(!mTut||(!mTut.dias&&!(mTut.tramos&&mTut.tramos.length)))continue;   // tutor sin restricciones → nada que cubrir
+      for(let pass=0;pass<3;pass++){
+        let moved=false;
+        for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){
+          if(grid[g.id][d][s])continue;
+          if(mcAvail(tut,d,s))continue;              // el tutor puede cubrir este hueco → no es problema
+          let done=false;
+          for(let d2=0;d2<ND&&!done;d2++)for(let s2=0;s2<NS&&!done;s2++){
+            if(d2===d&&s2===s)continue;
+            if(W[s2]!==W[s])continue;                // mismo tamaño de celda
+            const c=grid[g.id][d2][s2]; if(!c||c.band)continue;
+            if(!mcAvail(tut,d2,s2))continue;         // el hueco resultante debe poder cubrirlo el tutor
+            if(!mcAvail(c.prof,d,s)||!profLibreG(c.prof,d,s))continue;
+            grid[g.id][d][s]=c; grid[g.id][d2][s2]=null; done=true; moved=true;
+          }
+        }
+        if(!moved)break;
+      }
+    }
   })();
   for(const g of GRUPOS){
     const libres60=[], libres30=[];
@@ -1521,11 +1594,17 @@ function mcSolve(rnd,deadline){
     const slot0=libres60.filter(c=>c.s===0), slotN=libres60.filter(c=>c.s!==0);
     for(let k=slot0.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[slot0[k],slot0[j]]=[slot0[j],slot0[k]];}
     for(let k=slotN.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[slotN[k],slotN[j]]=[slotN[j],slotN[k]];}
+    // ¿el maestro/a de esa materia puede estar en esa celda sin chocar con nada ya colocado?
+    const cabeEn=(m,d,s)=>{ const p=prof[m]; return !p||(mcAvail(p,d,s)&&profLibreG(p,d,s)); };
     function pick60(cell,prefTroncal){ // materia con rem>=2; preferir troncal si prefTroncal; evitar repetir el día
       let cands=Object.keys(rem).filter(m=>rem[m]>=2);
       if(!cands.length)return false;
       cands.sort((a,b)=>{ if(prefTroncal){const ta=TRONCAL(a)?1:0,tb=TRONCAL(b)?1:0; if(ta!==tb)return tb-ta;} return (rem[b]-rem[a]) || (PRIO(b)-PRIO(a)); });
-      let chosen=null; for(const m of cands){ let rep=false; for(let s=0;s<NS;s++){const c=grid[g.id][cell.d][s]; if(c&&c.mat===m){rep=true;break;}} if(!rep){chosen=m;break;} }
+      // 1ª pasada: sin repetir materia el día Y con el maestro/a libre; 2ª: solo maestro libre; 3ª: lo que sea
+      let chosen=null;
+      for(const m of cands){ if(!cabeEn(m,cell.d,cell.s))continue; let rep=false; for(let s=0;s<NS;s++){const c=grid[g.id][cell.d][s]; if(c&&c.mat===m){rep=true;break;}} if(!rep){chosen=m;break;} }
+      if(!chosen)chosen=cands.find(m=>cabeEn(m,cell.d,cell.s));
+      if(!chosen){ for(const m of cands){ let rep=false; for(let s=0;s<NS;s++){const c=grid[g.id][cell.d][s]; if(c&&c.mat===m){rep=true;break;}} if(!rep){chosen=m;break;} } }
       if(!chosen)chosen=cands[0];
       grid[g.id][cell.d][cell.s]={mat:chosen,prof:prof[chosen]}; rem[chosen]-=2; return true; }
     slot0.forEach(c=>pick60(c,true)); slotN.forEach(c=>pick60(c,false));
@@ -1542,7 +1621,10 @@ function mcSolve(rnd,deadline){
       let cands=Object.keys(rem).filter(m=>rem[m]>=2);
       if(!cands.length){ cands=Object.keys(rem).filter(m=>rem[m]>0); if(!cands.length)return; }
       cands.sort((a,b)=>(rem[b]-rem[a]) || (PRIO(b)-PRIO(a)));
-      let chosen=cands.find(m=>{ for(let s=0;s<NS;s++){const c=grid[g.id][par[0].d][s]; if(c&&c.mat===m)return false;} return true; })||cands[0];
+      const libreAqui=m=>cabeEn(m,par[0].d,par[0].s)&&cabeEn(m,par[1].d,par[1].s);
+      let chosen=cands.find(m=>{ if(!libreAqui(m))return false; for(let s=0;s<NS;s++){const c=grid[g.id][par[0].d][s]; if(c&&c.mat===m)return false;} return true; })
+        ||cands.find(libreAqui)
+        ||cands.find(m=>{ for(let s=0;s<NS;s++){const c=grid[g.id][par[0].d][s]; if(c&&c.mat===m)return false;} return true; })||cands[0];
       const take=Math.min(2,rem[chosen]);
       grid[g.id][par[0].d][par[0].s]={mat:chosen,prof:prof[chosen]};
       if(take===2){ grid[g.id][par[1].d][par[1].s]={mat:chosen,prof:prof[chosen]}; rem[chosen]-=2; }
@@ -1554,6 +1636,7 @@ function mcSolve(rnd,deadline){
     medias.forEach(cell=>{
       if(!pend.length)return; let idx=0;
       if(cell.s===5){ const c6=grid[g.id][cell.d][6]; if(c6&&!c6.band){ const k=pend.indexOf(c6.mat); if(k>=0)idx=k; } }
+      if(!cabeEn(pend[idx],cell.d,cell.s)){ const k=pend.findIndex(m=>cabeEn(m,cell.d,cell.s)); if(k>=0)idx=k; }
       const m=pend.splice(idx,1)[0]; grid[g.id][cell.d][cell.s]={mat:m,prof:prof[m]};
     });
   }
@@ -1618,6 +1701,23 @@ function mcSolve(rnd,deadline){
     if(rnd()<0.7){ let best=null,bp=-1; for(const it of list){ const c=grid[it.g][it.d][it.s]; const pr=c&&!c.band?PRIO(c.mat):0; if(pr>bp || (pr===bp && rnd()<0.4)){bp=pr;best=it;} } pick=best; }
     else pick=list[Math.floor(rnd()*list.length)];
     const g=pick.g; const w1=W[pick.s];
+    // REPARACIÓN DIRIGIDA (cadena): si el solape es "mismo maestro en dos cursos a la vez",
+    // a veces la salida no es mover ESTA sesión sino la del OTRO curso implicado.
+    if(rnd()<0.2){
+      const c=grid[g][pick.d][pick.s];
+      if(c&&!c.band&&c.prof){
+        let g2=null;
+        for(const G2 of GRUPOS){ if(G2.id===g)continue; const c2=grid[G2.id][pick.d][pick.s]; if(c2&&!c2.band&&c2.prof===c.prof){g2=G2.id;break;} }
+        if(g2){
+          const p2={d:pick.d,s:pick.s};
+          const cs2=candsFor(g2,w1).filter(x=>!(x.d===p2.d&&x.s===p2.s));
+          let best2=null,bH2=Infinity,bS2=Infinity;
+          for(const b of cs2){ const h=hardDelta(g2,p2,b); if(h>bH2+1e-9)continue; const so=swapDelta(g2,p2,b);
+            if(h<bH2-1e-9||(Math.abs(h-bH2)<1e-9&&so<bS2-1e-9)){bH2=h;bS2=so;best2=b;} }
+          if(best2&&bH2<=0){ doSwap(g2,p2,best2); steps++; continue; }
+        }
+      }
+    }
     const cands=candsFor(g,w1).filter(c=>!(c.d===pick.d&&c.s===pick.s));
     if(!cands.length){ steps++; continue; }
     if(rnd()<0.25){ doSwap(g,pick,cands[Math.floor(rnd()*cands.length)]); }
@@ -1629,7 +1729,12 @@ function mcSolve(rnd,deadline){
     steps++;
   }
   if(hardList().n>0 && bestSnap){ restore(bestSnap); }   // quédate con el mejor estado alcanzado
-  if(hardList().n>0) return null;
+  const nSolapes=hardList().n;
+  if(nSolapes>0){
+    // no es perfecto, pero devolvemos el MEJOR PARCIAL: el usuario podrá verlo con los choques marcados
+    const gcopy={}; GRUPOS.forEach(g=>gcopy[g.id]=grid[g.id].map(r=>r.slice()));
+    return {grid:gcopy,steps,score:1e9,musMal:0,solapes:nSolapes};
+  }
   // PULIDO: reducir medias horas sueltas. Pasadas sistemáticas sobre TODAS las sueltas; swaps de 30 que no creen solapes.
   let mejoro=true, pasadas=0;
   while(mejoro && pasadas<60){
@@ -1647,28 +1752,31 @@ function mcSolve(rnd,deadline){
   }
   // CONSOLIDAR MÚSICA: si quedó partida (2 medias sueltas), moverla entera a un bloque de 1h (slot de 60)
   function profLibreEn(prof,d,s,exG){ if(!prof)return true; for(const g2 of GRUPOS){ if(g2.id===exG)continue; const c2=grid[g2.id][d][s]; if(!c2)continue; const pp=c2.band?[c2.band.cat,c2.band.ev,c2.band.ae]:[c2.prof]; if(pp.indexOf(prof)>=0)return false; } return true; }
-  function consolidarMusica(){
+  function consolidarMusica(){ // generalizado: consolida CUALQUIER especialidad de 1h (2 medias) que quedara partida
     for(const g of GRUPOS){
-      const gid=g.id, M=state.horas[gid]?.MUS||0; if(M!==2)continue;
-      if(bloquesSemana(gid,'MUS')<=1)continue;
-      const cels=[]; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){const c=grid[gid][d][s];if(c&&!c.band&&c.mat==='MUS')cels.push({d,s});}
-      if(cels.length!==2)continue;
-      const profMus=grid[gid][cels[0].d][cels[0].s].prof; if(!profMus)continue;
-      const [A,B]=cels;
-      const TRO=m=>(m==='LEN'||m==='MAT'||m==='GLO');
-      const dst=[];
-      for(let d=0;d<ND;d++){
-        for(const s of [0,6]){ if(W[s]!==2)continue; const c=grid[gid][d][s]; if(c&&!c.band&&TRO(c.mat)) dst.push({d,slots:[s],mat:c.mat,prof:c.prof}); }
-        for(const [s1,s2] of [[1,2],[3,4]]){ const c1=grid[gid][d][s1],c2=grid[gid][d][s2]; if(c1&&c2&&!c1.band&&!c2.band&&c1.mat===c2.mat&&TRO(c1.mat)&&c1.prof===c2.prof) dst.push({d,slots:[s1,s2],mat:c1.mat,prof:c1.prof}); }
-      }
-      for(const t of dst){
-        if(t.slots.some(s=>(t.d===A.d&&s===A.s)||(t.d===B.d&&s===B.s)))continue;
-        if(!t.slots.every(s=>profLibreEn(profMus,t.d,s,gid)&&mcAvail(profMus,t.d,s)))continue;       // Belén libre en el destino
-        if(!(profLibreEn(t.prof,A.d,A.s,gid)&&profLibreEn(t.prof,B.d,B.s,gid)&&mcAvail(t.prof,A.d,A.s)&&mcAvail(t.prof,B.d,B.s)))continue; // tutor libre donde estaba la música
-        t.slots.forEach(s=>grid[gid][t.d][s]={mat:'MUS',prof:profMus});
-        grid[gid][A.d][A.s]={mat:t.mat,prof:t.prof};
-        grid[gid][B.d][B.s]={mat:t.mat,prof:t.prof};
-        break;
+      const gid=g.id;
+      for(const MESP of ['MUS','ING','EF','FRA','CMED','ART']){
+        const M=state.horas[gid]?.[MESP]||0; if(M!==2)continue;
+        if(bloquesSemana(gid,MESP)<=1)continue;
+        const cels=[]; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){const c=grid[gid][d][s];if(c&&!c.band&&c.mat===MESP)cels.push({d,s});}
+        if(cels.length!==2)continue;
+        const profEsp=grid[gid][cels[0].d][cels[0].s].prof; if(!profEsp)continue;
+        const [A,B]=cels;
+        const TRO=m=>(m==='LEN'||m==='MAT'||m==='GLO');
+        const dst=[];
+        for(let d=0;d<ND;d++){
+          for(const s of [0,6]){ if(W[s]!==2)continue; const c=grid[gid][d][s]; if(c&&!c.band&&TRO(c.mat)) dst.push({d,slots:[s],mat:c.mat,prof:c.prof}); }
+          for(const [s1,s2] of [[1,2],[3,4]]){ const c1=grid[gid][d][s1],c2=grid[gid][d][s2]; if(c1&&c2&&!c1.band&&!c2.band&&c1.mat===c2.mat&&TRO(c1.mat)&&c1.prof===c2.prof) dst.push({d,slots:[s1,s2],mat:c1.mat,prof:c1.prof}); }
+        }
+        for(const t of dst){
+          if(t.slots.some(s=>(t.d===A.d&&s===A.s)||(t.d===B.d&&s===B.s)))continue;
+          if(!t.slots.every(s=>profLibreEn(profEsp,t.d,s,gid)&&mcAvail(profEsp,t.d,s)))continue;       // especialista libre en el destino
+          if(!(profLibreEn(t.prof,A.d,A.s,gid)&&profLibreEn(t.prof,B.d,B.s,gid)&&mcAvail(t.prof,A.d,A.s)&&mcAvail(t.prof,B.d,B.s)))continue; // tutor libre donde estaba la especialidad
+          t.slots.forEach(s=>grid[gid][t.d][s]={mat:MESP,prof:profEsp});
+          grid[gid][A.d][A.s]={mat:t.mat,prof:t.prof};
+          grid[gid][B.d][B.s]={mat:t.mat,prof:t.prof};
+          break;
+        }
       }
     }
   }
@@ -1676,13 +1784,14 @@ function mcSolve(rnd,deadline){
   // score de calidad: Música/especialidades de 1h partidas pesan MUCHÍSIMO; el resto, poco
   let musMal=0, resto=0;
   GRUPOS.forEach(g=>{ ['ING','EF','MUS','FRA','CMED','ART'].forEach(m=>{ const M=state.horas[g.id]?.[m]||0; if(M>0){ const maxB=Math.max(1,Math.floor(M/2)), b=bloquesSemana(g.id,m); if(b>maxB){ if(M<=2)musMal+=(b-maxB); else resto+=(b-maxB); } } }); });
-  return {grid,steps,score:musMal*100+resto, musMal};
+  return {grid,steps,score:musMal*100+resto, musMal, solapes:0};
 }
 function gridToResultado(grid){ const NS=numTramos(); const es=buildEngineState();
   GRUPOS.forEach(g=>{for(let d=0;d<DIAS.length;d++)for(let s=0;s<NS;s++){const c=grid[g.id][d][s]; if(c){es.grid[g.id][d][s]=c; if(c.band){occ(es,c.band.cat,d,s,1);if(c.band.ev)occ(es,c.band.ev,d,s,1);if(c.band.ae)occ(es,c.band.ae,d,s,1);}else if(c.prof)occ(es,c.prof,d,s,1);}}});
   return es; }
 
-function runEngine(btn){
+let _mejorParcial=null;   // mejor horario parcial (con choques) del último intento de generación
+async function runEngine(btn){
   // PRE-CHEQUEO: ¿algún maestro se pasa de horas disponibles? (diagnóstico claro antes de calcular)
   const ch=chequeoCargas();
   if(ch.exceso.length){
@@ -1692,23 +1801,65 @@ function runEngine(btn){
     return;
   }
 
+  // Progreso en vivo (el motor cede el hilo entre intentos para que la interfaz respire)
+  const gs=document.getElementById('genStatus');
+  gs.innerHTML=`<div class="gen-progress" id="genProg" role="status" aria-live="polite">
+    <div class="gp-top"><div class="gp-title">Cuadrando horarios…</div><div class="gp-stat" id="gpStat">preparando</div></div>
+    <div class="gp-bar"><div class="gp-fill" id="gpFill"></div></div>
+    <div class="gp-phase" id="gpPhase"><span class="dot"></span><span>Colocando la banda de religión y a los especialistas</span></div></div>`;
+  const setProg=(pct,stat,phase)=>{
+    const f=document.getElementById('gpFill'),st=document.getElementById('gpStat'),ph=document.getElementById('gpPhase');
+    if(f)f.style.width=Math.max(4,Math.min(100,pct))+'%';
+    if(st&&stat!=null)st.textContent=stat;
+    if(ph&&phase!=null)ph.innerHTML='<span class="dot"></span><span>'+phase+'</span>';
+  };
+  const yield0=()=>new Promise(r=>setTimeout(r,0));
+
   let ok=false, es=null, attempts=0;
   let bestGrid=null, bestScore=Infinity;
+  _mejorParcial=null;
+  let lastRelFail=null, soloRelFalla=true;
   const t0=performance.now();
-  for(let seed=1;seed<=80;seed++){
+  const SOFT_MS=6500, MAX_MS=25000;               // con progreso visible podemos buscar MUCHO más
+  for(let seed=1;seed<=600;seed++){
     attempts++;
     const rnd=mulberry32(seed*7919+13);
-    const res=mcSolve(rnd, Date.now()+3000);     // deadline holgado por intento (el navegador es más lento)
-    if(res){ ok=true; if(res.score<bestScore){ bestScore=res.score; bestGrid=res.grid; } if(res.musMal===0)break; }
+    const res=mcSolve(rnd, Date.now()+2200);
+    if(res){
+      soloRelFalla=false;
+      if(res.solapes===0){
+        ok=true;
+        if(res.score<bestScore){ bestScore=res.score; bestGrid=res.grid; }
+        if(res.musMal===0) break;                 // solución con calidad perfecta → parar
+      } else if(!_mejorParcial || res.solapes<_mejorParcial.solapes){
+        _mejorParcial={grid:res.grid, solapes:res.solapes};
+      }
+    } else if(mcRelFail){ lastRelFail={...mcRelFail}; }
     const elapsed=performance.now()-t0;
-    if(bestGrid && elapsed>4000) break;           // ya hay una solución válida → entregarla, no agotar el tiempo buscando música perfecta
-    if(elapsed>9000) break;                        // tope duro
+    const pct = ok ? 65+Math.min(35,(elapsed/SOFT_MS)*35) : Math.min(92,(elapsed/MAX_MS)*100);
+    setProg(pct,
+      `intento ${attempts}`+(ok?' · ✓ sin solapes, afinando calidad':(_mejorParcial?` · mejor hasta ahora: ${_mejorParcial.solapes} choque${_mejorParcial.solapes===1?'':'s'}`:'')),
+      ok?'Puliendo bloques, primeras horas y especialidades':(attempts>2?'Probando combinaciones distintas (semilla '+seed+')':null));
+    if(ok && elapsed>SOFT_MS) break;              // ya hay una solución válida → entregarla
+    if(elapsed>MAX_MS) break;                     // tope duro
+    await yield0();                               // ceder el hilo: la barra se mueve y la app no se congela
   }
   if(bestGrid) es=gridToResultado(bestGrid);
   const ms=Math.round(performance.now()-t0);
   btn.disabled=false; btn.textContent='⚙ Generar horarios';
   if(!ok){
+    // ¿Tenemos un "casi": el mejor intento con pocos choques? Entregarlo SIEMPRE es mejor que un no.
+    if(_mejorParcial){
+      const n=_mejorParcial.solapes;
+      const a=analizarViabilidad();
+      const culpables=a.filas.filter(f=>f.clase!=='ok').slice(0,3);
+      const lista=culpables.length?'<ul style="margin:6px 0 0 18px">'+culpables.map(f=>`<li><strong>${f.m.nombre}</strong> — ${fmtH(f.l)} h en ${fmtH(f.a)} h disponibles (margen ${fmtH(f.holg)} h)</li>`).join('')+'</ul>':'';
+      avisoGen(`<div class="notice warn">${iconWarn()}<div><strong>No he logrado dejarlo perfecto en ${Math.round(ms/1000)} s (${attempts} intentos), pero tengo un horario casi completo con solo ${n} choque${n===1?'':'s'}.</strong> Puedes cargarlo con los choques marcados en rojo y rematarlo a mano intercambiando celdas — suele resolverse en un par de movimientos.<div style="margin-top:10px"><button class="btn btn-primary" id="btnMejorIntento">📋 Cargar mejor intento (${n} choque${n===1?'':'s'} marcados)</button></div>${lista?`<div style="margin-top:10px">El cuello de botella está en:${lista}</div>`:''}</div></div>`);
+      const bm=document.getElementById('btnMejorIntento'); if(bm)bm.onclick=cargarMejorIntento;
+      return;
+    }
     // Si el motor nunca pasó de la religión, el problema es la BANDA de religión (no las cargas)
+    if(soloRelFalla&&lastRelFail) mcRelFail=lastRelFail;
     if(mcRelFail){
       const gn=mcRelFail.grupo&&GRP[mcRelFail.grupo]?GRP[mcRelFail.grupo].nombre:'algún curso';
       const nm=id=>id?maestroNombre(id):'—';
@@ -1738,8 +1889,92 @@ function runEngine(btn){
   GRUPOS.forEach(g=>{for(let d=0;d<DIAS.length;d++)for(let s=0;s<NS;s++)if(!es.grid[g.id][d][s])libres++;});
   const notaLibres = libres>0 ? ` Quedan ${libres} celdas <strong>libres</strong> (sin docencia asignada) para coordinaciones, refuerzos o lo que decida el/la tutor/a.` : '';
   document.getElementById('genStatus').innerHTML=
-    `<div class="notice ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Horarios generados sin solapamientos en ${ms} ms (${attempts} ${attempts===1?'intento':'intentos'}).${notaLibres} Puedes ajustarlos a mano pulsando dos celdas para intercambiarlas.</div>`;
+    `<div class="notice ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Horarios generados sin solapamientos en ${(ms/1000).toFixed(1)} s (${attempts} ${attempts===1?'intento':'intentos'}).${notaLibres} Puedes ajustarlos a mano pulsando dos celdas para intercambiarlas.</div>`
+    + informeCalidad();
   setupResultsView();
+}
+/* ===== Diagnóstico del resultado: choques, calidad y mejor intento ===== */
+function conflictosResultado(){
+  const NS=numTramos(), ND=DIAS.length, set=new Set(), det=[];
+  if(!state.resultado) return {set,det};
+  for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){
+    const vis={};
+    for(const g of GRUPOS){
+      const c=state.resultado[g.id]?.[d]?.[s]; if(!c)continue;
+      const ps=c.band?[c.band.cat,c.band.ev,c.band.ae].filter(Boolean):(c.prof?[c.prof]:[]);
+      for(const p of ps){
+        if(vis[p]!=null){ set.add(g.id+'|'+d+'|'+s); set.add(vis[p]+'|'+d+'|'+s); det.push({p,d,s,g1:vis[p],g2:g.id}); }
+        else vis[p]=g.id;
+      }
+    }
+    for(const g of GRUPOS){
+      const c=state.resultado[g.id]?.[d]?.[s]; if(!c||c.band)continue;
+      if(c.prof&&!mcAvail(c.prof,d,s)){ set.add(g.id+'|'+d+'|'+s); det.push({p:c.prof,d,s,g1:g.id,dispo:true}); }
+    }
+  }
+  return {set,det};
+}
+function bloquesSemanaRes(gid,mat){
+  const NS=numTramos(); let b=0;
+  for(let d=0;d<DIAS.length;d++){ let prev=false;
+    for(let s=0;s<NS;s++){ if(s===5)prev=false;
+      const c=state.resultado[gid]?.[d]?.[s]; const is=c&&!c.band&&c.mat===mat;
+      if(is&&!prev)b++; prev=is; } }
+  return b;
+}
+function informeCalidad(){
+  if(!state.resultado||!Object.keys(state.resultado).length)return '';
+  const NS=numTramos(), ND=DIAS.length;
+  const conf=conflictosResultado();
+  const nSol=conf.det.filter(x=>!x.dispo).length, nDis=conf.det.filter(x=>x.dispo).length;
+  const ESPL=['ING','EF','MUS','FRA','CMED','ART'];
+  let partidas=0;
+  GRUPOS.forEach(g=>ESPL.forEach(m=>{ const M=state.horas[g.id]?.[m]||0; if(M>0){ const maxB=Math.max(1,Math.ceil(M/2)); const b=bloquesSemanaRes(g.id,m); if(b>maxB)partidas+=(b-maxB); } }));
+  // 1ª hora en bloque: solo aplica si la primera franja está partida en dos medias (paresUnidos)
+  let phOk=0, phTot=0;
+  const _pares=paresUnidos();
+  if(_pares.length){
+    GRUPOS.forEach(g=>{for(let d=0;d<ND;d++){ for(const pr of _pares){ phTot++;
+      const a=state.resultado[g.id]?.[d]?.[pr[0]],b=state.resultado[g.id]?.[d]?.[pr[1]];
+      if((!a&&!b)||(a&&b&&a.mat===b.mat&&a.prof===b.prof))phOk++; } }});
+  }
+  let relMalC=0;
+  GRUPOS.forEach(g=>{ if((state.horas[g.id]?.REL||0)<=0)return;
+    for(let d=0;d<ND;d++){ let first=-1,last=-1,n=0;
+      for(let s=0;s<NS;s++){const c=state.resultado[g.id]?.[d]?.[s]; if(c&&c.mat==='REL'){if(first<0)first=s;last=s;n++;}}
+      if(n>0 && (last-first+1)!==n) relMalC++; } });
+  let libres=0;
+  GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++)if(!state.resultado[g.id]?.[d]?.[s])libres++;});
+  let score=100 - nSol*15 - nDis*10 - relMalC*10 - partidas*4 - Math.round((1-(phTot?phOk/phTot:1))*10);
+  score=Math.max(0,Math.min(100,score));
+  const scCol=score>=90?'background:var(--color-success-bg);color:#14532d':score>=70?'background:var(--color-warning-bg);color:#92580a':'background:var(--color-error-bg);color:#7f1d1d';
+  const item=(cls,tit,sub)=>`<div class="qr-item ${cls}"><div class="ic">${cls==='ok'?'✓':'!'}</div><div class="tx"><b>${tit}</b><span>${sub}</span></div></div>`;
+  const pctPH=phTot?Math.round(100*phOk/phTot):100;
+  return `<div class="qr-panel">
+    <div class="qr-head"><h3>Informe de calidad del horario</h3><div class="qr-score" style="${scCol}">${score}/100</div></div>
+    <div class="qr-grid">
+      ${item(nSol===0?'ok':'bad','Sin maestros duplicados',nSol===0?'Nadie está en dos cursos a la vez':nSol+' solape'+(nSol===1?'':'s')+' (en rojo en la rejilla)')}
+      ${item(nDis===0?'ok':'bad','Disponibilidad respetada',nDis===0?'Días y tramos de cada maestro/a, correctos':nDis+' clase'+(nDis===1?'':'s')+' fuera de la disponibilidad')}
+      ${item(relMalC===0?'ok':'warn','Religión en banda única',relMalC===0?'Bloque contiguo en todos los cursos':relMalC+' banda'+(relMalC===1?'':'s')+' partida'+(relMalC===1?'':'s'))}
+      ${item(partidas===0?'ok':'warn','Especialidades en bloque',partidas===0?'Ninguna especialidad troceada de más':partidas+' bloque'+(partidas===1?'':'s')+' extra (especialidad partida)')}
+      ${item(phTot===0||pctPH>=80?'ok':'warn','Primera hora en bloque de 1 h',phTot===0?'La primera franja ya es un bloque único':pctPH+'% de los días arrancan con la misma materia')}
+      ${item('ok','Huecos libres',libres===0?'Jornada completa en todos los cursos':libres+' celda'+(libres===1?'':'s')+' para refuerzos/coordinación')}
+    </div></div>`;
+}
+function cargarMejorIntento(){
+  if(!_mejorParcial)return;
+  state.resultado={};
+  GRUPOS.forEach(g=>state.resultado[g.id]=_mejorParcial.grid[g.id].map(r=>r.slice()));
+  const conf=conflictosResultado();
+  const L=lectivos();
+  const hora=s=>{const t=L[s];return t?(t.ini+'–'+t.fin):('tramo '+(s+1));};
+  const det=conf.det.slice(0,10).map(x=>`<li><strong>${nombreMaestro(x.p)}</strong> — ${DIAS_LARGO[DIAS[x.d]]||DIAS[x.d]} ${hora(x.s)}${x.dispo?' · fuera de su disponibilidad':` · en ${GRP[x.g1]?.nombre||'?'} y ${GRP[x.g2]?.nombre||'?'} a la vez`}</li>`).join('');
+  const n=conf.det.length;
+  document.getElementById('genStatus').innerHTML=
+    `<div class="notice warn">${iconWarn()}<div><strong>Mejor intento cargado: ${n} choque${n===1?'':'s'} marcado${n===1?'':'s'} en rojo.</strong> Pulsa dos celdas de la rejilla para intercambiarlas y deshacer los choques a mano:<ul style="margin:6px 0 0 18px">${det}</ul></div></div>`
+    + informeCalidad();
+  setupResultsView();
+  if(typeof persist==='function')persist();
 }
 function buildTasks(horas){
   horas = horas || state.horas;
@@ -1777,6 +2012,7 @@ function buildTasks(horas){
    RESULTADOS · render, edición e impresión
    ========================================================================= */
 let selCell=null;
+let _confSet=null;   // celdas en conflicto (gid|d|s) para pintarlas en rojo
 function maestroDaClase(m){
   const mid=m.id||m;
   for(const g of GRUPOS){
@@ -1808,6 +2044,7 @@ function drawCurrent(){
   const id=document.getElementById('viewTarget').value;
   const cont=document.getElementById('ttContainer');
   selCell=null;
+  try{ const cf=conflictosResultado(); _confSet=cf.set.size?cf.set:null; }catch(e){ _confSet=null; }
   cont.innerHTML = mode==='grupo' ? gridGrupo(id,true) : gridMaestro(id);
   if(mode==='grupo') bindSwap(id);
 }
@@ -1826,8 +2063,9 @@ function cellHTML(cell,gid,d,s,editable){
     sub=parts.join(' · ');
   }
   const lock=cell.mat==='REL';
+  const conf=_confSet&&_confSet.has(gid+'|'+d+'|'+s);
   const style=`background:${hexA(bg,.16)};color:#1f2937;border-left:4px solid ${bg}`;
-  return `<td class="cell${lock?' lock':''}" style="${style}" ${editable&&!lock?`data-c="${gid}|${d}|${s}"`:''} title="${m?m.full:''}">
+  return `<td class="cell${lock?' lock':''}${conf?' conflict':''}" style="${style}" ${editable&&!lock?`data-c="${gid}|${d}|${s}"`:''} title="${conf?'⚠ CHOQUE: este maestro/a está en dos sitios a la vez o fuera de su disponibilidad. ':''}${m?m.full:''}">
     <div class="m">${main}</div><div class="p">${sub}</div></td>`;
 }
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
@@ -2005,9 +2243,10 @@ function bindSwap(gid){
 // ¿Se puede mover a mano el contenido de esta celda?
 // - Religión: nunca. - Materias del tutor (Lengua, Mates, Plástica, Autonomía, Valores...): sí.
 // - Especialidades (Inglés, EF, Música, Francés, Conoc. Medio): solo si su maestro/a es tutor/a de ese curso.
-function movible(gid,cell){
+function movible(gid,cell,d,s){
   if(!cell) return true;                       // hueco libre
   if(cell.mat==='REL') return false;
+  if(d!=null && _confSet && _confSet.has(gid+'|'+d+'|'+s)) return true;  // una celda en CHOQUE siempre se puede mover para arreglarlo
   const ESP=(cell.mat==='ING'||cell.mat==='EF'||cell.mat==='MUS'||cell.mat==='FRA'||cell.mat==='CMED');
   if(!ESP) return true;
   return !!cell.prof && cell.prof===state.tutores[gid];   // especialista que además es tutor/a del curso
@@ -2017,7 +2256,7 @@ function trySwap(gid,a,b){
   const ca=res[a.d][a.s], cb=res[b.d][b.s];
   const W=pesosSlot();
   if((ca&&ca.mat==='REL')||(cb&&cb.mat==='REL')){ toast('La banda de religión no se mueve a mano (rompería las disponibilidades).','warn'); return; }
-  if(!movible(gid,ca)||!movible(gid,cb)){ toast('Las especialidades solo se pueden cambiar si su maestro/a es tutor/a de ese curso.','warn'); return; }
+  if(!movible(gid,ca,a.d,a.s)||!movible(gid,cb,b.d,b.s)){ toast('Las especialidades solo se pueden cambiar si su maestro/a es tutor/a de ese curso (salvo las celdas en choque, que sí se pueden mover).','warn'); return; }
   // Caso FUSIÓN: dos medias horas (30 min) de la MISMA materia (Lengua, Mates…) → unirlas en un bloque de 1 h
   const contig0=(d1,s1,d2,s2)=>(d1===d2 && Math.abs(s1-s2)===1 && !(Math.min(s1,s2)===4&&Math.max(s1,s2)===5));
   function libreEnPos(prof,d,s){ if(!prof)return true; for(const g of GRUPOS){ if(g.id===gid)continue; const c=state.resultado[g.id][d][s]; if(!c)continue; if(c.prof===prof)return false; if(c.band&&(c.band.cat===prof||c.band.ev===prof||c.band.ae===prof))return false; } return true; }
