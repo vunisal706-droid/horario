@@ -1472,6 +1472,11 @@ function mcSolve(rnd,deadline){
   const busyAt=(p,d,s)=>{ for(const g of GRUPOS){const c=grid[g.id][d][s]; if(!c)continue; if(c.band){if(c.band.cat===p||c.band.ev===p||c.band.ae===p)return true;}else if(c.prof===p)return true;} return false; };
   // bloques contiguos cuya suma de pesos = target (para religión 1,5h = 3 medias horas)
   function bloquesPeso(target){ const out=[]; for(const seg of segs){ for(let a=0;a<seg.length;a++){ let sum=0; for(let b=a;b<seg.length;b++){ sum+=W[seg[b]]; if(sum===target){out.push(seg.slice(a,b+1));break;} if(sum>target)break; } } } return out; }
+  // REGLA DURA: máximo 1,5 h (3 medias) de la MISMA materia por día → también impide 2 h seguidas.
+  // La Globalizada de Infantil está exenta (toda la jornada es globalizada por naturaleza).
+  const CAPDIA=3;
+  function pesoDiaDe(gr,d,m){ let c=0; for(let s=0;s<NS;s++){ const cc=grid[gr][d][s]; if(cc&&!cc.band&&cc.mat===m)c+=W[s]; } return c; }
+  const cabeCap=(gr,d,m,w)=>(m==='GLO')||(pesoDiaDe(gr,d,m)+w<=CAPDIA);
   // 1) RELIGIÓN en bloque de peso 3
   const relTasks=GRUPOS.filter(g=>(state.horas[g.id]?.REL||0)>0).map(g=>{const r=state.religion[g.id]||{};return {g:g.id,cat:r.cat,ev:r.ev||null,ae:r.ae||state.tutores[g.id]||null,len:state.horas[g.id].REL};});
   const relBloques=bloquesPeso(3);
@@ -1490,6 +1495,7 @@ function mcSolve(rnd,deadline){
     if(bOpts.length===0)return false;
     const t=pend[bi], rest=pend.slice(0,bi).concat(pend.slice(bi+1));
     for(let k=bOpts.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[bOpts[k],bOpts[j]]=[bOpts[j],bOpts[k]];}
+    bOpts.sort((a,b)=>(a.ss.indexOf(0)>=0?1:0)-(b.ss.indexOf(0)>=0?1:0));   // la religión evita la 1ª hora (reservada a troncales) si hay otro hueco
     for(const o of bOpts){ for(const s of o.ss)grid[t.g][o.d][s]={mat:'REL',prof:t.cat,band:{cat:t.cat,ev:t.ev,ae:t.ae}};
       if(placeRel(rest))return true; for(const s of o.ss)grid[t.g][o.d][s]=null; }
     return false; }
@@ -1542,16 +1548,23 @@ function mcSolve(rnd,deadline){
         for(let k=idxs.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[idxs[k],idxs[j]]=[idxs[j],idxs[k]];}
         let done=false;
         for(const i of idxs){ const cl=clases[i];
+          if(!cabeCap(cl.g,cell.d,cl.mat,W[cell.s]))continue;
           if(!mcAvail(cl.prof,cell.d,cell.s)||!profLibreG(cl.prof,cell.d,cell.s))continue;
           grid[cl.g][cell.d][cell.s]={mat:cl.mat,prof:cl.prof}; remMap[i]-=W[cell.s]; done=true; break; }
         if(!done)sc+=W[cell.s]*3;                       // celda sin cubrir: penaliza fuerte este intento
       }
       // 1) repartir el resto de clases de especialistas
       for(let ci=0;ci<clases.length;ci++){ const cl=clases[ci]; let rem=remMap[ci];
-        const put1h=()=>{ const c=[]; for(let d=0;d<ND;d++)for(const s of [0,6]){ if(W[s]!==2||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
-        const putPar=()=>{ const c=[]; for(let d=0;d<ND;d++)for(const [a,b] of [[1,2],[3,4]]){ if(grid[cl.g][d][a]||grid[cl.g][d][b])continue; if(!mcAvail(cl.prof,d,a)||!mcAvail(cl.prof,d,b)||!profLibreG(cl.prof,d,a)||!profLibreG(cl.prof,d,b))continue; c.push([{d,s:a},{d,s:b}]); } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x[0].d][x[0].s]={mat:cl.mat,prof:cl.prof}; grid[cl.g][x[1].d][x[1].s]={mat:cl.mat,prof:cl.prof}; return true; };
-        const put30=()=>{ const c=[]; for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){ if(W[s]!==1||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
-        while(rem>=2){ if(put1h()){rem-=2;continue;} if(putPar()){rem-=2;continue;} break; }
+        const put1hAt=(slots)=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,2))continue; for(const s of slots){ if(W[s]!==2||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
+        const putPar=()=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,2))continue; for(const [a,b] of [[1,2],[3,4]]){ if(grid[cl.g][d][a]||grid[cl.g][d][b])continue; if(!mcAvail(cl.prof,d,a)||!mcAvail(cl.prof,d,b)||!profLibreG(cl.prof,d,a)||!profLibreG(cl.prof,d,b))continue; c.push([{d,s:a},{d,s:b}]); } } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x[0].d][x[0].s]={mat:cl.mat,prof:cl.prof}; grid[cl.g][x[1].d][x[1].s]={mat:cl.mat,prof:cl.prof}; return true; };
+        const put30=()=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,1))continue; for(let s=0;s<NS;s++){ if(W[s]!==1||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
+        // Troncales (Lengua/Mates/Globalizada de tutoras multi-grupo): 1ª franja primero.
+        // Especialidades: última franja → pares de 30' (también forman 1h) → 1ª franja SOLO como último recurso.
+        const esTro=TRONCAL(cl.mat);
+        while(rem>=2){
+          if(esTro){ if(put1hAt([0])||put1hAt([6])||putPar()){rem-=2;continue;} break; }
+          if(put1hAt([6])||putPar()||put1hAt([0])){rem-=2;continue;} break;
+        }
         while(rem>=1){ if(put30()){rem-=1;continue;} break; }
         sc+=rem;                                         // medias que no cupieron
       }
@@ -1599,13 +1612,18 @@ function mcSolve(rnd,deadline){
     function pick60(cell,prefTroncal){ // materia con rem>=2; preferir troncal si prefTroncal; evitar repetir el día
       let cands=Object.keys(rem).filter(m=>rem[m]>=2);
       if(!cands.length)return false;
-      cands.sort((a,b)=>{ if(prefTroncal){const ta=TRONCAL(a)?1:0,tb=TRONCAL(b)?1:0; if(ta!==tb)return tb-ta;} return (rem[b]-rem[a]) || (PRIO(b)-PRIO(a)); });
-      // 1ª pasada: sin repetir materia el día Y con el maestro/a libre; 2ª: solo maestro libre; 3ª: lo que sea
-      let chosen=null;
-      for(const m of cands){ if(!cabeEn(m,cell.d,cell.s))continue; let rep=false; for(let s=0;s<NS;s++){const c=grid[g.id][cell.d][s]; if(c&&c.mat===m){rep=true;break;}} if(!rep){chosen=m;break;} }
-      if(!chosen)chosen=cands.find(m=>cabeEn(m,cell.d,cell.s));
-      if(!chosen){ for(const m of cands){ let rep=false; for(let s=0;s<NS;s++){const c=grid[g.id][cell.d][s]; if(c&&c.mat===m){rep=true;break;}} if(!rep){chosen=m;break;} } }
-      if(!chosen)chosen=cands[0];
+      cands.sort((a,b)=>{ if(prefTroncal){const ta=TRONCAL(a)?1:0,tb=TRONCAL(b)?1:0; if(ta!==tb)return tb-ta;
+        if(ta&&tb){const la=(a==='LEN'||a==='GLO')?1:0,lb=(b==='LEN'||b==='GLO')?1:0; if(la!==lb)return lb-la;}}   // LENGUA antes que Mates en la 1ª hora
+        return (rem[b]-rem[a]) || (PRIO(b)-PRIO(a)); });
+      const capOK=m=>cabeCap(g.id,cell.d,m,2);
+      const noRep=m=>{ for(let s=0;s<NS;s++){const c=grid[g.id][cell.d][s]; if(c&&c.mat===m)return false;} return true; };
+      // tope diario SIEMPRE por delante: 1º cap+maestro libre+sin repetir día, luego relajando
+      let chosen=cands.find(m=>capOK(m)&&cabeEn(m,cell.d,cell.s)&&noRep(m))
+        || cands.find(m=>capOK(m)&&cabeEn(m,cell.d,cell.s))
+        || cands.find(m=>capOK(m)&&noRep(m))
+        || cands.find(capOK)
+        || cands.find(noRep)
+        || cands[0];
       grid[g.id][cell.d][cell.s]={mat:chosen,prof:prof[chosen]}; rem[chosen]-=2; return true; }
     slot0.forEach(c=>pick60(c,true)); slotN.forEach(c=>pick60(c,false));
     // slots de 30: agrupar en PARES contiguos (bloques de 1h) por día; las medias impares aparte
@@ -1621,10 +1639,14 @@ function mcSolve(rnd,deadline){
       let cands=Object.keys(rem).filter(m=>rem[m]>=2);
       if(!cands.length){ cands=Object.keys(rem).filter(m=>rem[m]>0); if(!cands.length)return; }
       cands.sort((a,b)=>(rem[b]-rem[a]) || (PRIO(b)-PRIO(a)));
+      const capOK=m=>cabeCap(g.id,par[0].d,m,2);
       const libreAqui=m=>cabeEn(m,par[0].d,par[0].s)&&cabeEn(m,par[1].d,par[1].s);
-      let chosen=cands.find(m=>{ if(!libreAqui(m))return false; for(let s=0;s<NS;s++){const c=grid[g.id][par[0].d][s]; if(c&&c.mat===m)return false;} return true; })
-        ||cands.find(libreAqui)
-        ||cands.find(m=>{ for(let s=0;s<NS;s++){const c=grid[g.id][par[0].d][s]; if(c&&c.mat===m)return false;} return true; })||cands[0];
+      const noRep=m=>{ for(let s=0;s<NS;s++){const c=grid[g.id][par[0].d][s]; if(c&&c.mat===m)return false;} return true; };
+      let chosen=cands.find(m=>capOK(m)&&libreAqui(m)&&noRep(m))
+        ||cands.find(m=>capOK(m)&&libreAqui(m))
+        ||cands.find(m=>capOK(m)&&noRep(m))
+        ||cands.find(capOK)
+        ||cands.find(noRep)||cands[0];
       const take=Math.min(2,rem[chosen]);
       grid[g.id][par[0].d][par[0].s]={mat:chosen,prof:prof[chosen]};
       if(take===2){ grid[g.id][par[1].d][par[1].s]={mat:chosen,prof:prof[chosen]}; rem[chosen]-=2; }
@@ -1635,8 +1657,9 @@ function mcSolve(rnd,deadline){
     for(let k=pend.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[pend[k],pend[j]]=[pend[j],pend[k]];}
     medias.forEach(cell=>{
       if(!pend.length)return; let idx=0;
-      if(cell.s===5){ const c6=grid[g.id][cell.d][6]; if(c6&&!c6.band){ const k=pend.indexOf(c6.mat); if(k>=0)idx=k; } }
-      if(!cabeEn(pend[idx],cell.d,cell.s)){ const k=pend.findIndex(m=>cabeEn(m,cell.d,cell.s)); if(k>=0)idx=k; }
+      if(cell.s===5){ const c6=grid[g.id][cell.d][6]; if(c6&&!c6.band){ const k=pend.indexOf(c6.mat); if(k>=0&&cabeCap(g.id,cell.d,pend[k],1))idx=k; } }
+      const ok=m=>cabeCap(g.id,cell.d,m,1)&&cabeEn(m,cell.d,cell.s);
+      if(!ok(pend[idx])){ let k=pend.findIndex(ok); if(k<0)k=pend.findIndex(m=>cabeCap(g.id,cell.d,m,1)); if(k>=0)idx=k; }
       const m=pend.splice(idx,1)[0]; grid[g.id][cell.d][cell.s]={mat:m,prof:prof[m]};
     });
   }
@@ -1649,6 +1672,9 @@ function mcSolve(rnd,deadline){
   function hardCell(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0; let cost=0; const p=c.prof;
     if(p&&!mcAvail(p,d,s))cost+=2;
     if(p){ for(const g2 of GRUPOS){ if(g2.id===g)continue; const c2=grid[g2.id][d][s]; if(!c2)continue; const pp=c2.band?[c2.band.cat,c2.band.ev,c2.band.ae]:[c2.prof]; if(pp.indexOf(p)>=0)cost+=1; } }
+    // REGLA DURA: más de 1,5h (3 medias) de la misma materia el mismo día (GLO de Infantil exenta).
+    // Cubre también el "jamás 2 horas seguidas": con tope de 3 medias no caben 4 contiguas.
+    if(c.mat!=='GLO'){ let cnt=0; for(let s2=0;s2<NS;s2++){const cc=grid[g][d][s2]; if(cc&&!cc.band&&cc.mat===c.mat)cnt+=W[s2];} if(cnt>3)cost+=1; }
     return cost; }
   function runsDe(g,d,mat){ let runs=0,prev=false; for(let s=0;s<NS;s++){ if(s===5)prev=false; const c=grid[g][d][s]; const is=c&&!c.band&&c.mat===mat; if(is&&!prev)runs++; prev=is; } return runs; }
   function bloquesSemana(g,mat){ let b=0; for(let d=0;d<ND;d++){ let prev=false; for(let s=0;s<NS;s++){ if(s===5)prev=false; const c=grid[g][d][s]; const is=c&&!c.band&&c.mat===mat; if(is&&!prev)b++; prev=is; } } return b; }
@@ -1752,6 +1778,23 @@ function mcSolve(rnd,deadline){
   }
   // CONSOLIDAR MÚSICA: si quedó partida (2 medias sueltas), moverla entera a un bloque de 1h (slot de 60)
   function profLibreEn(prof,d,s,exG){ if(!prof)return true; for(const g2 of GRUPOS){ if(g2.id===exG)continue; const c2=grid[g2.id][d][s]; if(!c2)continue; const pp=c2.band?[c2.band.cat,c2.band.ev,c2.band.ae]:[c2.prof]; if(pp.indexOf(prof)>=0)return false; } return true; }
+  // TRONCALES TEMPRANO: si al final del día (última franja) quedó Lengua o Mates y la 1ª hora tiene otra
+  // cosa intercambiable, súbelas. Lengua manda sobre Mates. (Solo si no crea solapes ni rompe reglas duras.)
+  function troncalesTemprano(){
+    const rank=c=>!c||c.band?-1:(c.mat==='LEN'?3:c.mat==='GLO'?3:c.mat==='MAT'?2:0);
+    for(const g of GRUPOS){ const gid=g.id;
+      for(let d=0;d<ND;d++){
+        const c0=grid[gid][d][0], c6=grid[gid][d][6];
+        if(!c0||!c6||c0.band||c6.band)continue;
+        if(W[0]!==W[6])continue;
+        if(rank(c6)>rank(c0)){
+          const a={d,s:0},b={d,s:6};
+          if(hardDelta(gid,a,b)<=0) doSwap(gid,a,b);
+        }
+      }
+    }
+  }
+  troncalesTemprano();
   function consolidarMusica(){ // generalizado: consolida CUALQUIER especialidad de 1h (2 medias) que quedara partida
     for(const g of GRUPOS){
       const gid=g.id;
@@ -1772,6 +1815,15 @@ function mcSolve(rnd,deadline){
           if(t.slots.some(s=>(t.d===A.d&&s===A.s)||(t.d===B.d&&s===B.s)))continue;
           if(!t.slots.every(s=>profLibreEn(profEsp,t.d,s,gid)&&mcAvail(profEsp,t.d,s)))continue;       // especialista libre en el destino
           if(!(profLibreEn(t.prof,A.d,A.s,gid)&&profLibreEn(t.prof,B.d,B.s,gid)&&mcAvail(t.prof,A.d,A.s)&&mcAvail(t.prof,B.d,B.s)))continue; // tutor libre donde estaba la especialidad
+          // la troncal que se muda a A y B no puede superar 1,5h en esos días
+          if(t.mat!=='GLO'){
+            const gain={}; gain[A.d]=(gain[A.d]||0)+W[A.s]; gain[B.d]=(gain[B.d]||0)+W[B.s];
+            let capBad=false;
+            for(const dd in gain){ const d2=+dd; let base=pesoDiaDe(gid,d2,t.mat);
+              if(d2===t.d)base-=t.slots.reduce((a,s)=>a+W[s],0);
+              if(base+gain[dd]>CAPDIA){capBad=true;break;} }
+            if(capBad)continue;
+          }
           t.slots.forEach(s=>grid[gid][t.d][s]={mat:MESP,prof:profEsp});
           grid[gid][A.d][A.s]={mat:t.mat,prof:t.prof};
           grid[gid][B.d][B.s]={mat:t.mat,prof:t.prof};
@@ -1924,9 +1976,24 @@ function bloquesSemanaRes(gid,mat){
 }
 function informeCalidad(){
   if(!state.resultado||!Object.keys(state.resultado).length)return '';
-  const NS=numTramos(), ND=DIAS.length;
+  const NS=numTramos(), ND=DIAS.length, W=pesosSlot();
   const conf=conflictosResultado();
   const nSol=conf.det.filter(x=>!x.dispo).length, nDis=conf.det.filter(x=>x.dispo).length;
+  // REGLAS DE VÍCTOR: máx. 1,5h por materia y día, y jamás 2h seguidas (GLO de Infantil exenta)
+  let excesoDia=0, dosSeguidas=0, tronc0=0, tronc0Tot=0;
+  GRUPOS.forEach(g=>{ for(let d=0;d<ND;d++){
+    const cnt={};
+    for(let s=0;s<NS;s++){const c=state.resultado[g.id]?.[d]?.[s]; if(c&&!c.band&&c.mat!=='GLO')cnt[c.mat]=(cnt[c.mat]||0)+W[s];}
+    Object.values(cnt).forEach(v=>{if(v>3)excesoDia++;});
+    let run=0,mprev=null;
+    for(let s=0;s<NS;s++){ if(s===5){run=0;mprev=null;}
+      const c=state.resultado[g.id]?.[d]?.[s]; const m=(c&&!c.band&&c.mat!=='GLO')?c.mat:null;
+      run=(m&&m===mprev)?run+W[s]:(m?W[s]:0); mprev=m;
+      if(run>3){dosSeguidas++;run=0;} }
+    tronc0Tot++;
+    const c0=state.resultado[g.id]?.[d]?.[0];
+    if(c0&&!c0.band&&(c0.mat==='LEN'||c0.mat==='MAT'||c0.mat==='GLO'))tronc0++;
+  }});
   const ESPL=['ING','EF','MUS','FRA','CMED','ART'];
   let partidas=0;
   GRUPOS.forEach(g=>ESPL.forEach(m=>{ const M=state.horas[g.id]?.[m]||0; if(M>0){ const maxB=Math.max(1,Math.ceil(M/2)); const b=bloquesSemanaRes(g.id,m); if(b>maxB)partidas+=(b-maxB); } }));
@@ -1945,16 +2012,20 @@ function informeCalidad(){
       if(n>0 && (last-first+1)!==n) relMalC++; } });
   let libres=0;
   GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++)if(!state.resultado[g.id]?.[d]?.[s])libres++;});
-  let score=100 - nSol*15 - nDis*10 - relMalC*10 - partidas*4 - Math.round((1-(phTot?phOk/phTot:1))*10);
+  let score=100 - nSol*15 - nDis*10 - excesoDia*8 - dosSeguidas*8 - relMalC*10 - partidas*4 - Math.round((1-(phTot?phOk/phTot:1))*10) - Math.round((1-(tronc0Tot?tronc0/tronc0Tot:1))*8);
   score=Math.max(0,Math.min(100,score));
   const scCol=score>=90?'background:var(--color-success-bg);color:#14532d':score>=70?'background:var(--color-warning-bg);color:#92580a':'background:var(--color-error-bg);color:#7f1d1d';
   const item=(cls,tit,sub)=>`<div class="qr-item ${cls}"><div class="ic">${cls==='ok'?'✓':'!'}</div><div class="tx"><b>${tit}</b><span>${sub}</span></div></div>`;
   const pctPH=phTot?Math.round(100*phOk/phTot):100;
+  const pctT0=tronc0Tot?Math.round(100*tronc0/tronc0Tot):100;
   return `<div class="qr-panel">
     <div class="qr-head"><h3>Informe de calidad del horario</h3><div class="qr-score" style="${scCol}">${score}/100</div></div>
     <div class="qr-grid">
       ${item(nSol===0?'ok':'bad','Sin maestros duplicados',nSol===0?'Nadie está en dos cursos a la vez':nSol+' solape'+(nSol===1?'':'s')+' (en rojo en la rejilla)')}
       ${item(nDis===0?'ok':'bad','Disponibilidad respetada',nDis===0?'Días y tramos de cada maestro/a, correctos':nDis+' clase'+(nDis===1?'':'s')+' fuera de la disponibilidad')}
+      ${item(excesoDia===0?'ok':'bad','Máx. 1,5 h por materia y día',excesoDia===0?'Ninguna materia supera 1,5 h en un día':excesoDia+' caso'+(excesoDia===1?'':'s')+' con más de 1,5 h el mismo día')}
+      ${item(dosSeguidas===0?'ok':'bad','Sin 2 h seguidas',dosSeguidas===0?'Ningún bloque supera 1,5 h contiguas':dosSeguidas+' bloque'+(dosSeguidas===1?'':'s')+' de más de 1,5 h seguidas')}
+      ${item(pctT0>=80?'ok':'warn','Lengua/Mates a 1ª hora',pctT0+'% de los días arrancan con troncal (Lengua prioritaria)')}
       ${item(relMalC===0?'ok':'warn','Religión en banda única',relMalC===0?'Bloque contiguo en todos los cursos':relMalC+' banda'+(relMalC===1?'':'s')+' partida'+(relMalC===1?'':'s'))}
       ${item(partidas===0?'ok':'warn','Especialidades en bloque',partidas===0?'Ninguna especialidad troceada de más':partidas+' bloque'+(partidas===1?'':'s')+' extra (especialidad partida)')}
       ${item(phTot===0||pctPH>=80?'ok':'warn','Primera hora en bloque de 1 h',phTot===0?'La primera franja ya es un bloque único':pctPH+'% de los días arrancan con la misma materia')}

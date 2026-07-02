@@ -1,7 +1,7 @@
 // Service Worker — Cuadra Horarios
 // Estrategia: network-first para la app (siempre la última versión si hay red),
 // con caché de respaldo para uso offline.
-const CACHE = 'cuadra-horarios-v35';
+const CACHE = 'cuadra-horarios-v36';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
