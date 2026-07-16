@@ -318,6 +318,12 @@ tbody tr:nth-child(even){background:#fcfcfd}
       <div id="asigList"></div>
     </div>
     <div class="card">
+      <h2>Especialidades a primeras horas (opcional)</h2>
+      <p class="sub">Por defecto, la app coloca <strong>Lengua y Matemáticas a primeras horas</strong> y las especialidades (Inglés, EF, Música, Francés, Artística…) más tarde. Marca aquí los grupos donde prefieres <strong>lo contrario</strong>: que reciban las especialidades <strong>prioritariamente en las primeras sesiones</strong> de la mañana (útil, p. ej., para itinerantes que solo vienen a primera hora o para cursos bajos que rinden mejor con el especialista temprano).</p>
+      <div id="espPrimerasBox" class="inline" style="gap:8px;flex-wrap:wrap"></div>
+      <p class="small muted" style="margin-top:8px">Es una preferencia, no una regla dura: el generador la respeta siempre que la disponibilidad del claustro y el resto de reglas lo permitan.</p>
+    </div>
+    <div class="card">
       <h2>Religión (banda paralela)</h2>
       <p class="sub">La religión ocupa una única franja por grupo donde conviven Católica, Evangélica y Atención Educativa. Configura quién imparte cada opción. Evangélica solo se imparte donde la marques (por defecto 4º·5º·6º) y según su disponibilidad (martes).</p>
       <div class="tbl-wrap"><table id="relTable"></table></div>
@@ -478,6 +484,7 @@ function rebuildGrupos(){
 // asegura que cada grupo tenga sus datos (horas heredadas del curso, asignación, tutor, religión)
 function ensureGrupoData(){
   if(!state) return;
+  if(!state.espPrimeras) state.espPrimeras={};   // migración: datos guardados antiguos
   GRUPOS.forEach(g=>{
     if(!state.horas[g.id]) state.horas[g.id]=JSON.parse(JSON.stringify(HORAS_30[g.curso]||{}));
     if(!state.asig[g.id]) state.asig[g.id]={};
@@ -521,6 +528,7 @@ function freshState(){
     religion: {},        // grupoId -> {cat,ev,ae}
     especialistas: {ING:'',EF:'',MUS:'',FRA:'',CMED13:'',CMED46:''}, // mismo maestro para todo el centro (línea 1)
     espMulti: {},        // línea 2/3: materia -> [maestroId,...] (varios especialistas, reparto automático)
+    espPrimeras: {},     // grupoId -> true: grupos que prefieren las ESPECIALIDADES en las primeras sesiones
     resultado: null,     // grupoId -> [dia][slot] = {mat,prof,band:{cat,ev,ae}}|null
   };
 }
@@ -1072,8 +1080,24 @@ function renderCarga(){
   box.innerHTML=`<div style="margin:4px 0 16px"><div class="small muted" style="margin-bottom:6px">Carga lectiva asignada / horas disponibles de cada maestro/a:</div><div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>`+
     (ch.exceso.length?`<div class="notice warn" style="margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Hay maestros/as con más horas de las que caben en su disponibilidad. Mira el desglose y reparte alguna materia a otra persona (p. ej. apoyo), o amplía su disponibilidad en el paso Claustro.${detalle}</div>`:'')+`</div>`;
 }
+// Chips de grupos que prefieren las especialidades en las primeras sesiones
+function renderEspPrimeras(){
+  const box=document.getElementById('espPrimerasBox'); if(!box)return;
+  if(!state.espPrimeras)state.espPrimeras={};
+  box.innerHTML='';
+  GRUPOS.forEach(g=>{
+    const on=!!state.espPrimeras[g.id];
+    const c=document.createElement('span');
+    c.className='cmedchip'+(on?' on':'');
+    c.textContent=g.nombre;
+    c.title=on?'Este grupo prioriza las especialidades a primeras horas':'Pulsa para priorizar las especialidades a primeras horas en '+g.nombre;
+    c.onclick=()=>{ if(state.espPrimeras[g.id])delete state.espPrimeras[g.id]; else state.espPrimeras[g.id]=true; renderEspPrimeras(); persist(); };
+    box.appendChild(c);
+  });
+}
 function renderAsig(){
   renderEspecialistas();
+  renderEspPrimeras();
   const box=document.getElementById('asigList');
   if(state.maestros.length===0){box.innerHTML='<div class="notice warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Primero añade maestros en el paso 3.</div>';return;}
   let html='';
@@ -1202,7 +1226,10 @@ function softScore(es,x,c){
   let sc=0; const m=x.m, d=c.d, s=c.s;
   if(m==='LEN'||m==='GLO') sc+=(es.NS-s)*2;          // lengua/globalizada a primeras horas
   if(m==='MAT') sc+=(es.NS-s)*1.5;                    // mates pronto
-  if(['ING','EF','FRA','ART','MUS','PSI'].includes(m)) sc+=s*0.8; // primeras horas para Lengua/Mates
+  if(['ING','EF','FRA','ART','MUS','PSI'].includes(m)){
+    if(state.espPrimeras&&state.espPrimeras[x.g]) sc+=(es.NS-s)*2.2;  // grupo con preferencia: especialidades a PRIMERAS horas
+    else sc+=s*0.8;                                                    // resto: especialidades tarde (primeras horas para Lengua/Mates)
+  }
   // adyacencia: forma bloques de 1h (dos tramos seguidos misma materia, sin cruzar el recreo)
   const seg=segOf(es,s); let sameDay=0, adj=false;
   for(const ss of seg){ const cc=es.grid[x.g][d][ss]; if(cc&&cc.mat===m){ sameDay++; if(Math.abs(ss-s)===1) adj=true; } }
@@ -1555,14 +1582,17 @@ function mcSolve(rnd,deadline){
       }
       // 1) repartir el resto de clases de especialistas
       for(let ci=0;ci<clases.length;ci++){ const cl=clases[ci]; let rem=remMap[ci];
+        const prio1=!!(state.espPrimeras&&state.espPrimeras[cl.g]&&!TRONCAL(cl.mat));   // este grupo quiere las especialidades a PRIMERAS horas
         const put1hAt=(slots)=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,2))continue; for(const s of slots){ if(W[s]!==2||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
-        const putPar=()=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,2))continue; for(const [a,b] of [[1,2],[3,4]]){ if(grid[cl.g][d][a]||grid[cl.g][d][b])continue; if(!mcAvail(cl.prof,d,a)||!mcAvail(cl.prof,d,b)||!profLibreG(cl.prof,d,a)||!profLibreG(cl.prof,d,b))continue; c.push([{d,s:a},{d,s:b}]); } } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x[0].d][x[0].s]={mat:cl.mat,prof:cl.prof}; grid[cl.g][x[1].d][x[1].s]={mat:cl.mat,prof:cl.prof}; return true; };
-        const put30=()=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,1))continue; for(let s=0;s<NS;s++){ if(W[s]!==1||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } } if(!c.length)return false; const x=libres(conPref(cl.g,c))[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
+        const putPar=()=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,2))continue; for(const [a,b] of [[1,2],[3,4]]){ if(grid[cl.g][d][a]||grid[cl.g][d][b])continue; if(!mcAvail(cl.prof,d,a)||!mcAvail(cl.prof,d,b)||!profLibreG(cl.prof,d,a)||!profLibreG(cl.prof,d,b))continue; c.push([{d,s:a},{d,s:b}]); } } if(!c.length)return false; let cand=libres(conPref(cl.g,c)); if(prio1)cand=cand.slice().sort((A,B)=>A[0].s-B[0].s); const x=cand[0]; grid[cl.g][x[0].d][x[0].s]={mat:cl.mat,prof:cl.prof}; grid[cl.g][x[1].d][x[1].s]={mat:cl.mat,prof:cl.prof}; return true; };
+        const put30=()=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,1))continue; for(let s=0;s<NS;s++){ if(W[s]!==1||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } } if(!c.length)return false; let cand=libres(conPref(cl.g,c)); if(prio1)cand=cand.slice().sort((A,B)=>A.s-B.s); const x=cand[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
         // Troncales (Lengua/Mates/Globalizada de tutoras multi-grupo): 1ª franja primero.
         // Especialidades: última franja → pares de 30' (también forman 1h) → 1ª franja SOLO como último recurso.
+        // EXCEPCIÓN: en grupos marcados en "Especialidades a primeras horas" el orden se invierte: 1ª franja → pares tempranos → última.
         const esTro=TRONCAL(cl.mat);
         while(rem>=2){
           if(esTro){ if(put1hAt([0])||put1hAt([6])||putPar()){rem-=2;continue;} break; }
+          if(prio1){ if(put1hAt([0])||putPar()||put1hAt([6])){rem-=2;continue;} break; }
           if(put1hAt([6])||putPar()||put1hAt([0])){rem-=2;continue;} break;
         }
         while(rem>=1){ if(put30()){rem-=1;continue;} break; }
@@ -1980,7 +2010,7 @@ function informeCalidad(){
   const conf=conflictosResultado();
   const nSol=conf.det.filter(x=>!x.dispo).length, nDis=conf.det.filter(x=>x.dispo).length;
   // REGLAS DE VÍCTOR: máx. 1,5h por materia y día, y jamás 2h seguidas (GLO de Infantil exenta)
-  let excesoDia=0, dosSeguidas=0, tronc0=0, tronc0Tot=0;
+  let excesoDia=0, dosSeguidas=0, tronc0=0, tronc0Tot=0, esp0=0, esp0Tot=0;
   GRUPOS.forEach(g=>{ for(let d=0;d<ND;d++){
     const cnt={};
     for(let s=0;s<NS;s++){const c=state.resultado[g.id]?.[d]?.[s]; if(c&&!c.band&&c.mat!=='GLO')cnt[c.mat]=(cnt[c.mat]||0)+W[s];}
@@ -1990,9 +2020,14 @@ function informeCalidad(){
       const c=state.resultado[g.id]?.[d]?.[s]; const m=(c&&!c.band&&c.mat!=='GLO')?c.mat:null;
       run=(m&&m===mprev)?run+W[s]:(m?W[s]:0); mprev=m;
       if(run>3){dosSeguidas++;run=0;} }
-    tronc0Tot++;
     const c0=state.resultado[g.id]?.[d]?.[0];
-    if(c0&&!c0.band&&(c0.mat==='LEN'||c0.mat==='MAT'||c0.mat==='GLO'))tronc0++;
+    if(state.espPrimeras&&state.espPrimeras[g.id]){
+      esp0Tot++;
+      if(c0&&!c0.band&&['ING','EF','MUS','FRA','ART','PSI','CMED'].includes(c0.mat))esp0++;
+    } else {
+      tronc0Tot++;
+      if(c0&&!c0.band&&(c0.mat==='LEN'||c0.mat==='MAT'||c0.mat==='GLO'))tronc0++;
+    }
   }});
   const ESPL=['ING','EF','MUS','FRA','CMED','ART'];
   let partidas=0;
@@ -2012,12 +2047,13 @@ function informeCalidad(){
       if(n>0 && (last-first+1)!==n) relMalC++; } });
   let libres=0;
   GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++)if(!state.resultado[g.id]?.[d]?.[s])libres++;});
-  let score=100 - nSol*15 - nDis*10 - excesoDia*8 - dosSeguidas*8 - relMalC*10 - partidas*4 - Math.round((1-(phTot?phOk/phTot:1))*10) - Math.round((1-(tronc0Tot?tronc0/tronc0Tot:1))*8);
+  let score=100 - nSol*15 - nDis*10 - excesoDia*8 - dosSeguidas*8 - relMalC*10 - partidas*4 - Math.round((1-(phTot?phOk/phTot:1))*10) - Math.round((1-(tronc0Tot?tronc0/tronc0Tot:1))*8) - Math.round((1-(esp0Tot?esp0/esp0Tot:1))*6);
   score=Math.max(0,Math.min(100,score));
   const scCol=score>=90?'background:var(--color-success-bg);color:#14532d':score>=70?'background:var(--color-warning-bg);color:#92580a':'background:var(--color-error-bg);color:#7f1d1d';
   const item=(cls,tit,sub)=>`<div class="qr-item ${cls}"><div class="ic">${cls==='ok'?'✓':'!'}</div><div class="tx"><b>${tit}</b><span>${sub}</span></div></div>`;
   const pctPH=phTot?Math.round(100*phOk/phTot):100;
   const pctT0=tronc0Tot?Math.round(100*tronc0/tronc0Tot):100;
+  const pctE0=esp0Tot?Math.round(100*esp0/esp0Tot):100;
   return `<div class="qr-panel">
     <div class="qr-head"><h3>Informe de calidad del horario</h3><div class="qr-score" style="${scCol}">${score}/100</div></div>
     <div class="qr-grid">
@@ -2025,7 +2061,8 @@ function informeCalidad(){
       ${item(nDis===0?'ok':'bad','Disponibilidad respetada',nDis===0?'Días y tramos de cada maestro/a, correctos':nDis+' clase'+(nDis===1?'':'s')+' fuera de la disponibilidad')}
       ${item(excesoDia===0?'ok':'bad','Máx. 1,5 h por materia y día',excesoDia===0?'Ninguna materia supera 1,5 h en un día':excesoDia+' caso'+(excesoDia===1?'':'s')+' con más de 1,5 h el mismo día')}
       ${item(dosSeguidas===0?'ok':'bad','Sin 2 h seguidas',dosSeguidas===0?'Ningún bloque supera 1,5 h contiguas':dosSeguidas+' bloque'+(dosSeguidas===1?'':'s')+' de más de 1,5 h seguidas')}
-      ${item(pctT0>=80?'ok':'warn','Lengua/Mates a 1ª hora',pctT0+'% de los días arrancan con troncal (Lengua prioritaria)')}
+      ${item(pctT0>=80?'ok':'warn','Lengua/Mates a 1ª hora',pctT0+'% de los días arrancan con troncal (Lengua prioritaria)'+(esp0Tot?' · sin contar los grupos con especialidades a primeras':''))}
+      ${esp0Tot?item(pctE0>=70?'ok':'warn','Especialidades a 1ª hora (grupos marcados)',pctE0+'% de los días de esos grupos arrancan con una especialidad'):''}
       ${item(relMalC===0?'ok':'warn','Religión en banda única',relMalC===0?'Bloque contiguo en todos los cursos':relMalC+' banda'+(relMalC===1?'':'s')+' partida'+(relMalC===1?'':'s'))}
       ${item(partidas===0?'ok':'warn','Especialidades en bloque',partidas===0?'Ninguna especialidad troceada de más':partidas+' bloque'+(partidas===1?'':'s')+' extra (especialidad partida)')}
       ${item(phTot===0||pctPH>=80?'ok':'warn','Primera hora en bloque de 1 h',phTot===0?'La primera franja ya es un bloque único':pctPH+'% de los días arrancan con la misma materia')}
@@ -2499,6 +2536,8 @@ function buildPromptIA(){
   L.push('');
   L.push('=== PREFERENCIAS (si es posible) ===');
   L.push('- Lengua y Matemáticas a primeras horas de la mañana.');
+  const _gEspPrim=GRUPOS.filter(g=>state.espPrimeras&&state.espPrimeras[g.id]).map(g=>g.nombre);
+  if(_gEspPrim.length) L.push('- EXCEPCIÓN: en los grupos '+_gEspPrim.join(', ')+' coloca las ESPECIALIDADES (Inglés, EF, Música, Francés, Artística…) prioritariamente en las PRIMERAS sesiones de la mañana; en esos grupos Lengua y Matemáticas pasan a media mañana.');
   L.push('- Evita repetir la misma materia dos veces el mismo día en un grupo salvo que sea inevitable.');
   L.push('');
   L.push('=== ENTREGABLE: DOCUMENTO WORD (.docx) DESCARGABLE ===');
