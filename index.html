@@ -251,7 +251,7 @@ tbody tr:nth-child(even){background:#fcfcfd}
   <section class="panel" data-panel="centro">
     <div class="card acc acc-rojo">
       <h2><span class="step-badge">1</span> Datos del centro y franjas horarias</h2>
-      <p class="sub">Define la jornada. Por defecto: de 9:00 a 14:00, con la <strong>primera hora (9:00–10:00) de 60 min</strong> y el resto en franjas de 30 min, recreo de 12:00 a 12:30. Así el cómputo encaja con el reparto oficial en horas y medias horas.</p>
+      <p class="sub">Define la jornada. Por defecto: de 9:00 a 14:00, con la <strong>primera hora (9:00–10:00) de 60 min</strong> y el resto en franjas de 30 min, recreo de 12:00 a 12:30. Así el cómputo encaja con el reparto oficial en horas y medias horas. Si tu jornada no encaja con estos campos, más abajo puedes <strong>editar la plantilla franja a franja</strong>.</p>
       <div class="grid2">
         <div class="field"><label for="cNombre">Nombre del centro</label><input type="text" id="cNombre"></div>
         <div class="field"><label for="cInicio">Hora de inicio</label><input type="time" id="cInicio"></div>
@@ -276,9 +276,11 @@ tbody tr:nth-child(even){background:#fcfcfd}
       </div>
       <div id="lineasBox"></div>
     </div>
-    <div class="card">
-      <h2>Plantilla del horario (vacía)</h2>
-      <p class="sub">Así queda la rejilla con la jornada actual, antes de rellenar nada. Se actualiza al cambiar la jornada arriba.</p>
+    <div class="card acc acc-ambar">
+      <h2>Plantilla del horario</h2>
+      <p class="sub">Así queda la rejilla con la jornada actual, antes de rellenar nada. Si tu centro tiene <strong>otro reparto de sesiones</strong> (dos recreos, el recreo a otra hora, más o menos franjas…), pulsa <strong>Editar a mano</strong> y monta la plantilla franja a franja.</p>
+      <div class="inline" id="franjaBotonera" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>
+      <div id="franjaEditor"></div>
       <div id="plantillaVacia"></div>
     </div>
   </section>
@@ -300,6 +302,10 @@ tbody tr:nth-child(even){background:#fcfcfd}
       <button class="btn btn-primary" id="btnAddMaestro">+ Añadir maestro/a</button>
       <button class="btn" id="btnImportar">📄 Importar personal (PDF de Séneca)</button>
       <input type="file" id="impFile" accept="application/pdf" hidden>
+      <div class="notice info" style="margin-top:12px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+        <div>Al generar el listado en Séneca (<em>Personal → Relación de personal del centro</em>), marca solo las columnas <strong>Nombre</strong> y <strong>Puesto</strong>. El resto (DNI, situación administrativa, fechas de toma de posesión, teléfonos…) no hace falta, y además ensucia la detección automática de especialidades.</div>
+      </div>
       <div id="maestrosList" style="margin-top:16px"></div>
     </div>
   </section>
@@ -380,6 +386,10 @@ tbody tr:nth-child(even){background:#fcfcfd}
   <div class="modal" role="dialog" aria-modal="true" style="max-width:760px">
     <h3>📄 Importar personal desde Séneca</h3>
     <p class="small muted" style="margin-bottom:8px">Revisa el personal detectado y su especialidad. Desmarca quien no quieras dar de alta y ajusta el rol si hace falta. Los días/tramos de disponibilidad los pondrás después en cada maestro/a.</p>
+    <div class="notice info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+      <div>Si el listado sale incompleto o con nombres raros, vuelve a descargarlo en Séneca marcando <strong>solo Nombre y Puesto</strong>: los demás datos no hacen falta y confunden a la detección.</div>
+    </div>
     <div id="impInfo" class="notice info" style="display:none"></div>
     <div class="tbl-wrap" style="max-height:48vh;overflow:auto"><table id="impTabla"></table></div>
     <div class="inline" style="justify-content:flex-end;margin-top:12px">
@@ -520,6 +530,7 @@ let state = null;
 function freshState(){
   return {
     centro:{nombre:'CEIP Capitulaciones de Santa Fe', inicio:'09:00', fin:'14:00', dur:30, recreoIni:'12:00', recreoFin:'12:30', tramo30Ini:'', tramo30Fin:'', bloque60Ini:true, bloque60Fin:true,
+            franjas:null,   // null = jornada automática · array = plantilla editada a mano [{tipo:'lectiva'|'recreo',ini,fin}]
             lineas:{INF3:1,INF4:1,INF5:1,'1':1,'2':1,'3':1,'4':1,'5':1,'6':1}},   // grupos por curso (1=línea 1)
     horas: JSON.parse(JSON.stringify(HORAS_30)),
     maestros: [],        // {id,nombre,rol,dias:[...]|null, tramos:[...]|null}
@@ -554,8 +565,26 @@ function durEn(cur){
   }
   return c.dur||60;
 }
+// ¿La jornada está editada a mano (plantilla manual) o se calcula sola?
+function esManual(){
+  return Array.isArray(state.centro.franjas) && state.centro.franjas.length>0;
+}
+// Construye las franjas a partir de la plantilla editada a mano.
+function tramoTimesManual(){
+  const out=[]; let idx=0;
+  (state.centro.franjas||[]).slice()
+    .filter(f=>f && f.ini && f.fin && toMin(f.fin)>toMin(f.ini))
+    .sort((a,b)=>toMin(a.ini)-toMin(b.ini))
+    .forEach(f=>{
+      const d=toMin(f.fin)-toMin(f.ini);
+      if(f.tipo==='recreo') out.push({recreo:true, ini:f.ini, fin:f.fin});
+      else out.push({i:idx++, ini:f.ini, fin:f.fin, dur:d, w:Math.max(1,Math.round(d/30))});
+    });
+  return out;
+}
 // Genera las franjas reales: lectivas (con su índice i) + el recreo a hora fija.
 function tramoTimes(){
+  if(esManual()) return tramoTimesManual();
   const c=state.centro;
   const ini=toMin(c.inicio), fin=toMin(c.fin), rIni=toMin(c.recreoIni), rFin=toMin(c.recreoFin);
   const tieneRecreo=(rFin>rIni && rIni>=ini && rFin<=fin);
@@ -689,7 +718,7 @@ function previewTramos(){
   const lt=lectivos(); const total=slotsSemana();
   const partes=tramoTimes().map(t=> t.recreo
       ? `<span style="color:#9a3412">▮ recreo ${t.ini}-${t.fin}</span>`
-      : `${t.ini}-${t.fin}${t.dur<state.centro.dur?` <em>(${t.dur}′)</em>`:''}`);
+      : `${t.ini}-${t.fin}${(esManual()||t.dur<state.centro.dur)?` <em>(${t.dur}′)</em>`:''}`);
   const nf=filasVista().filter(f=>f.type==='slot').length;
   document.getElementById('tramoPreview').innerHTML=
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`+
@@ -700,6 +729,8 @@ function previewTramos(){
     box.innerHTML=`<button class="btn btn-sm" id="btnPreset" style="margin-top:10px">Cargar reparto oficial (${fmtH(total)} h/semana)</button>`;
     document.getElementById('btnPreset').onclick=()=>{ state.horas=JSON.parse(JSON.stringify(pre)); toast('Reparto sugerido cargado. Revísalo en el paso 2.'); if(activeTab==='materias')renderHoras(); };
   } else box.innerHTML='';
+  bloquearCamposJornada();
+  renderFranjaEditor();
   renderPlantillaVacia();
 }
 function renderPlantillaVacia(){
@@ -707,11 +738,161 @@ function renderPlantillaVacia(){
   let html='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
   filasVista().forEach(t=>{
     if(t.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${t.ini}-${t.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const badge=t.primera?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(t.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${t.dur}′</span>`:'');
+    const badge=t.dur>=60?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':((esManual()||t.dur<state.centro.dur)?`<br><span style="font-weight:600;color:#9a3412">${t.dur}′</span>`:'');
     html+=`<tr><td class="timecol">${t.ini}<br>${t.fin}${badge}</td>${DIAS.map(()=>'<td class="cell empty">·</td>').join('')}</tr>`;
   });
   html+='</tbody></table>';
   cont.innerHTML=html;
+}
+
+/* =========================================================================
+   PANEL 1b · EDITOR DE FRANJAS (plantilla editable a mano)
+   ========================================================================= */
+// Cada franja es {tipo:'lectiva'|'recreo', ini:'HH:MM', fin:'HH:MM'}.
+// Las lectivas deben durar 30 o 60 min: el generador coloca celdas de media
+// hora y bloques de una hora, no sabe repartir sesiones de otra medida.
+const PRESETS_JORNADA=[
+  {id:'std', nombre:'9–14 estándar (Andalucía)', f:[['l','09:00','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['l','11:00','11:30'],['l','11:30','12:00'],['r','12:00','12:30'],['l','12:30','13:00'],['l','13:00','14:00']]},
+  {id:'r1130', nombre:'9–14 con recreo a las 11:30', f:[['l','09:00','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['l','11:00','11:30'],['r','11:30','12:00'],['l','12:00','12:30'],['l','12:30','13:00'],['l','13:00','14:00']]},
+  {id:'t30', nombre:'9–14 todo en tramos de 30′', f:[['l','09:00','09:30'],['l','09:30','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['l','11:00','11:30'],['l','11:30','12:00'],['r','12:00','12:30'],['l','12:30','13:00'],['l','13:00','13:30'],['l','13:30','14:00']]},
+  {id:'dosrec', nombre:'9–14 con dos recreos', f:[['l','09:00','10:00'],['l','10:00','11:00'],['r','11:00','11:30'],['l','11:30','12:00'],['l','12:00','12:30'],['r','12:30','13:00'],['l','13:00','14:00']]},
+  {id:'ocho', nombre:'8–13 (jornada adelantada)', f:[['l','08:00','09:00'],['l','09:00','09:30'],['l','09:30','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['r','11:00','11:30'],['l','11:30','12:00'],['l','12:00','13:00']]},
+];
+function presetAFranjas(p){ return p.f.map(x=>({tipo:x[0]==='r'?'recreo':'lectiva', ini:x[1], fin:x[2]})); }
+// Congela la jornada automática actual como plantilla editable
+function franjasDesdeAuto(){
+  const guardado=state.centro.franjas; state.centro.franjas=null;
+  const arr=tramoTimes().map(t=>({tipo:t.recreo?'recreo':'lectiva', ini:t.ini, fin:t.fin}));
+  state.centro.franjas=guardado;
+  return arr;
+}
+function ordenarFranjas(){
+  if(!Array.isArray(state.centro.franjas))return;
+  state.centro.franjas.sort((a,b)=>toMin(a.ini)-toMin(b.ini));
+}
+function validaFranjas(){
+  const errores=[], avisos=[];
+  const f=(state.centro.franjas||[]).slice().sort((a,b)=>toMin(a.ini)-toMin(b.ini));
+  if(!f.length) return {errores:['La plantilla está vacía. Añade al menos una franja lectiva.'],avisos};
+  let lectivas=0;
+  f.forEach((x,n)=>{
+    const a=toMin(x.ini), b=toMin(x.fin), et=(x.tipo==='recreo'?'Recreo':'Franja')+' '+x.ini+'–'+x.fin;
+    if(!(b>a)){ errores.push(`${et}: la hora de fin tiene que ser posterior a la de inicio.`); return; }
+    if(x.tipo!=='recreo'){
+      lectivas++;
+      if(b-a!==30 && b-a!==60) errores.push(`${et}: dura ${b-a} minutos. Las franjas lectivas tienen que ser de 30 o de 60 minutos.`);
+    }
+    if(n>0){
+      const p=f[n-1], pb=toMin(p.fin);
+      if(a<pb) errores.push(`${et} se solapa con la anterior (${p.ini}–${p.fin}).`);
+      else if(a>pb) avisos.push(`Hay un hueco de ${a-pb} min entre ${p.fin} y ${x.ini}: ese rato quedará fuera del horario.`);
+    }
+  });
+  if(!lectivas) errores.push('No hay ninguna franja lectiva: solo has puesto recreos.');
+  return {errores,avisos};
+}
+// En modo manual, los campos de jornada automática no pintan nada
+function bloquearCamposJornada(){
+  const man=esManual();
+  ['cInicio','cFin','cDur','cRecIni','cRecFin','cT30Ini','cT30Fin'].forEach(id=>{
+    const n=document.getElementById(id); if(!n)return;
+    n.disabled=man; n.style.opacity=man?'.45':''; n.style.cursor=man?'not-allowed':'';
+  });
+}
+function renderFranjaEditor(){
+  const box=document.getElementById('franjaEditor'), bar=document.getElementById('franjaBotonera');
+  if(!box||!bar)return;
+  const man=esManual();
+  const v=man?validaFranjas():{errores:[],avisos:[]};
+
+  // botonera
+  let bh='';
+  if(!man){
+    bh=`<button class="btn btn-primary btn-sm" id="fbEditar">✏️ Editar a mano</button>`+
+       `<span class="small muted">Ahora la jornada se calcula sola con los campos de arriba.</span>`;
+  }else{
+    bh=`<button class="btn btn-sm" id="fbAuto">↺ Volver al modo automático</button>`+
+       `<button class="btn btn-sm" id="fbAddL">➕ Franja lectiva</button>`+
+       `<button class="btn btn-sm" id="fbAddR">➕ Recreo</button>`+
+       `<select id="fbPreset" style="max-width:260px"><option value="">Cargar una plantilla tipo…</option>${PRESETS_JORNADA.map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('')}</select>`;
+  }
+  bar.innerHTML=bh;
+  if(!man){
+    document.getElementById('fbEditar').onclick=()=>{ state.centro.franjas=franjasDesdeAuto(); previewTramos(); toast('Plantilla desbloqueada: ya puedes tocar cada franja'); };
+  }else{
+    document.getElementById('fbAuto').onclick=()=>{
+      if(!confirm('Se descartará la plantilla que has editado y la jornada volverá a calcularse con los campos de arriba. ¿Seguimos?'))return;
+      state.centro.franjas=null; previewTramos(); toast('Vuelta al modo automático');
+    };
+    document.getElementById('fbAddL').onclick=()=>addFranja('lectiva');
+    document.getElementById('fbAddR').onclick=()=>addFranja('recreo');
+    document.getElementById('fbPreset').onchange=e=>{
+      const p=PRESETS_JORNADA.find(x=>x.id===e.target.value); if(!p)return;
+      state.centro.franjas=presetAFranjas(p); previewTramos(); toast('Plantilla «'+p.nombre+'» cargada');
+    };
+  }
+
+  if(!man){ box.innerHTML=''; return; }
+  // si el usuario está escribiendo dentro del editor, no lo reconstruimos (perdería el foco)
+  if(box.contains(document.activeElement)){ pintarAvisoFranjas(v); return; }
+
+  const f=state.centro.franjas;
+  let html='<div class="tbl-wrap" style="margin-bottom:10px"><table style="width:100%"><thead><tr>'+
+    '<th style="width:34px">#</th><th>Tipo</th><th>Empieza</th><th>Termina</th><th>Dura</th><th style="width:120px">Mover / quitar</th></tr></thead><tbody>';
+  f.forEach((x,n)=>{
+    const d=(x.ini&&x.fin)?(toMin(x.fin)-toMin(x.ini)):0;
+    const mal=(x.tipo!=='recreo') && (d!==30 && d!==60);
+    html+=`<tr${mal?' style="background:#fef2f2"':''}>
+      <td class="small muted">${n+1}</td>
+      <td><select data-ftipo="${n}"><option value="lectiva"${x.tipo!=='recreo'?' selected':''}>Sesión lectiva</option><option value="recreo"${x.tipo==='recreo'?' selected':''}>Recreo</option></select></td>
+      <td><input type="time" data-fini="${n}" value="${x.ini||''}"></td>
+      <td><input type="time" data-ffin="${n}" value="${x.fin||''}"></td>
+      <td class="small${mal?'':' muted'}">${d>0?d+'′':'—'}</td>
+      <td><button class="btn btn-sm" data-fup="${n}" title="Subir"${n===0?' disabled':''}>↑</button>
+          <button class="btn btn-sm" data-fdown="${n}" title="Bajar"${n===f.length-1?' disabled':''}>↓</button>
+          <button class="btn btn-sm" data-fdel="${n}" title="Quitar">🗑</button></td></tr>`;
+  });
+  html+='</tbody></table></div><div id="franjaAviso"></div>';
+  box.innerHTML=html;
+
+  box.querySelectorAll('[data-ftipo]').forEach(s=>s.onchange=()=>{ state.centro.franjas[+s.dataset.ftipo].tipo=s.value; previewTramos(); });
+  box.querySelectorAll('[data-fini]').forEach(i=>i.onchange=()=>{ state.centro.franjas[+i.dataset.fini].ini=i.value; ordenarFranjas(); previewTramos(); });
+  box.querySelectorAll('[data-ffin]').forEach(i=>i.onchange=()=>{ state.centro.franjas[+i.dataset.ffin].fin=i.value; ordenarFranjas(); previewTramos(); });
+  box.querySelectorAll('[data-fup]').forEach(b=>b.onclick=()=>moverFranja(+b.dataset.fup,-1));
+  box.querySelectorAll('[data-fdown]').forEach(b=>b.onclick=()=>moverFranja(+b.dataset.fdown,1));
+  box.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=()=>{ state.centro.franjas.splice(+b.dataset.fdel,1); previewTramos(); });
+  pintarAvisoFranjas(v);
+}
+function pintarAvisoFranjas(v){
+  const n=document.getElementById('franjaAviso'); if(!n)return;
+  let h='';
+  if(v.errores.length){
+    h+=`<div class="notice warn">${iconWarn()}<div><strong>Revisa la plantilla:</strong><ul style="margin:4px 0 0 18px">${v.errores.map(e=>`<li>${e}</li>`).join('')}</ul></div></div>`;
+  }
+  if(v.avisos.length){
+    h+=`<div class="notice info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg><div><ul style="margin:0 0 0 18px">${v.avisos.map(e=>`<li>${e}</li>`).join('')}</ul></div></div>`;
+  }
+  if(!h && esManual()) h=`<div class="notice ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><div>Plantilla correcta. Los cambios se reflejan abajo y en todos los horarios que generes.</div></div>`;
+  n.innerHTML=h;
+}
+function addFranja(tipo){
+  const f=state.centro.franjas;
+  const ult=f.length?f[f.length-1].fin:'09:00';
+  const a=toMin(ult), d=(tipo==='recreo')?30:60;
+  f.push({tipo, ini:fmt(a), fin:fmt(Math.min(a+d,23*60+59))});
+  previewTramos();
+}
+function moverFranja(n,dir){
+  const f=state.centro.franjas, m=n+dir;
+  if(m<0||m>=f.length)return;
+  const inicio=Math.min(...f.map(x=>toMin(x.ini)));
+  const dur=f.map(x=>toMin(x.fin)-toMin(x.ini));
+  const t=f[n]; f[n]=f[m]; f[m]=t;
+  const td=dur[n]; dur[n]=dur[m]; dur[m]=td;
+  // se recolocan todas en cadena desde la hora de entrada: así no aparecen huecos al mover
+  let cur=inicio;
+  f.forEach((x,i)=>{ x.ini=fmt(cur); cur+=dur[i]; x.fin=fmt(cur); });
+  previewTramos();
 }
 
 /* =========================================================================
@@ -1477,6 +1658,11 @@ function generar(){
 }
 function validar(){
   const p=[]; const need=slotsSemana();
+  if(esManual()){
+    const v=validaFranjas();
+    v.errores.forEach(e=>p.push('Plantilla del horario (paso 1) → '+e));
+    if(!numTramos()) p.push('Plantilla del horario (paso 1): no hay ninguna franja lectiva, así que no hay dónde colocar las clases.');
+  }
   GRUPOS.forEach(g=>{ const t=totalGrupo(g.id); if(t>need) p.push(`${g.nombre}: las horas suman ${fmtH(t)} h y no caben en ${fmtH(need)} h lectivas. Quita ${fmtH(t-need)} h.`); });
   GRUPOS.forEach(g=>{
     const mats=materiasDeEtapa(g.etapa).filter(m=>m.rol!=='religion'&&(state.horas[g.id]?.[m.id]||0)>0);
