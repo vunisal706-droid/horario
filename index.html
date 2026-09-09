@@ -256,14 +256,31 @@ tbody tr:nth-child(even){background:#fcfcfd}
         <div class="field"><label for="cNombre">Nombre del centro</label><input type="text" id="cNombre"></div>
         <div class="field"><label for="cInicio">Hora de inicio</label><input type="time" id="cInicio"></div>
         <div class="field"><label for="cFin">Hora de fin</label><input type="time" id="cFin"></div>
-        <div class="field"><label for="cDur">Duración de cada sesión</label>
-          <select id="cDur"><option value="60">60 min (1 hora)</option><option value="45">45 min</option><option value="30">30 min</option></select></div>
-        <div class="field"><label for="cRecIni">Recreo · inicio</label><input type="time" id="cRecIni"></div>
-        <div class="field"><label for="cRecFin">Recreo · fin</label><input type="time" id="cRecFin"></div>
+        <div class="field"><label for="cComputo">Cómo se cuentan las sesiones</label>
+          <select id="cComputo">
+            <option value="horas">Por horas · rejilla de 30 y 60 min (Andalucía)</option>
+            <option value="sesiones">Por sesiones · todas iguales (45, 50, 55…)</option>
+          </select></div>
+        <div class="field" id="fldDur"><label for="cDur">Duración de cada sesión</label>
+          <select id="cDur"><option value="60">60 min (1 hora)</option><option value="55">55 min</option><option value="50">50 min</option><option value="45">45 min</option><option value="30">30 min</option></select></div>
+        <div class="field"><label for="cRecIni" id="lblRecIni">Recreo · inicio</label><input type="time" id="cRecIni"></div>
+        <div class="field"><label for="cRecFin" id="lblRecFin">Recreo · fin</label><input type="time" id="cRecFin"></div>
         <div class="field"><label for="cT30Ini">Tramos de 30 min · desde <span class="muted small">(opcional)</span></label><input type="time" id="cT30Ini"></div>
         <div class="field"><label for="cT30Fin">Tramos de 30 min · hasta</label><input type="time" id="cT30Fin"></div>
       </div>
+      <div class="notice" style="margin-top:2px;background:#f8fafc;border-color:#e2e8f0">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">
+          <input type="checkbox" id="cRecEtapa" style="width:20px;height:20px;flex:0 0 auto">
+          <span><strong>Infantil y Primaria tienen recreos distintos</strong><br>
+          <span class="small muted">El recreo de una etapa es hora de clase para la otra: los especialistas de Inglés, Religión, Música o E. Física pueden dar clase en él y no se quedan con huecos.</span></span>
+        </label>
+        <div class="grid2" id="recEtapaBox" style="margin-top:10px;display:none">
+          <div class="field"><label for="cRecIniINF">Recreo de <strong>Infantil</strong> · inicio</label><input type="time" id="cRecIniINF"></div>
+          <div class="field"><label for="cRecFinINF">Recreo de <strong>Infantil</strong> · fin</label><input type="time" id="cRecFinINF"></div>
+        </div>
+      </div>
       <div id="tramoPreview" class="notice info" style="margin-top:6px"></div>
+      <div id="tramoAvisos"></div>
       <div id="presetBox"></div>
     </div>
     <div class="card acc acc-teal">
@@ -522,8 +539,9 @@ const HORAS_30 = {
   'INF5':{GLO:36,PSI:4,ING:2,REL:3},
 };
 // elige el reparto sugerido según nº de sesiones lectivas/semana
-function presetHoras(slotsSemana){
-  if(slotsSemana===45) return HORAS_30;
+function presetHoras(total){
+  if(esSesiones()) return null;         // el reparto oficial está en horas, no en sesiones
+  if(total===45) return HORAS_30;
   return null;
 }
 
@@ -534,6 +552,9 @@ let state = null;
 function freshState(){
   return {
     centro:{nombre:'CEIP Capitulaciones de Santa Fe', inicio:'09:00', fin:'14:00', dur:30, recreoIni:'12:00', recreoFin:'12:30', tramo30Ini:'', tramo30Fin:'', bloque60Ini:true, bloque60Fin:true,
+            computo:'horas',           // 'horas' = rejilla 30/60 min | 'sesiones' = todas las sesiones iguales (45, 50, 55, 60...)
+            recEtapa:false,            // true = Infantil y Primaria tienen recreos distintos
+            recIniINF:'11:30', recFinINF:'12:00',   // recreo de Infantil (solo si recEtapa)
             franjas:null,   // null = jornada automática · array = plantilla editada a mano [{tipo:'lectiva'|'recreo',ini,fin}]
             lineas:{INF3:1,INF4:1,INF5:1,'1':1,'2':1,'3':1,'4':1,'5':1,'6':1}},   // grupos por curso (1=línea 1)
     horas: JSON.parse(JSON.stringify(HORAS_30)),
@@ -573,49 +594,127 @@ function durEn(cur){
 function esManual(){
   return Array.isArray(state.centro.franjas) && state.centro.franjas.length>0;
 }
-// Construye las franjas a partir de la plantilla editada a mano.
-function tramoTimesManual(){
-  const out=[]; let idx=0;
-  (state.centro.franjas||[]).slice()
+/* ---------------------------------------------------------------------
+   NÚCLEO DE FRANJAS · recreos por etapa + sesiones de cualquier duración
+   ---------------------------------------------------------------------
+   · state.centro.computo:
+       'horas'    → rejilla clásica de 30 y 60 min. La unidad de cómputo es
+                    la media hora, igual que siempre.
+       'sesiones' → todas las sesiones lectivas duran lo mismo (45, 50, 55…).
+                    La unidad de cómputo pasa a ser LA SESIÓN, porque con
+                    sesiones de 45 min el reparto oficial en horas no es
+                    divisible: se asignan sesiones/semana, no horas.
+   · state.centro.recEtapa = true → Infantil y Primaria con recreos distintos.
+     Un recreo de UNA sola etapa SÍ ocupa un tramo de la rejilla común: la otra
+     etapa da clase en él (por eso un especialista no se queda con hueco).
+     Ese tramo queda BLOQUEADO solo para la etapa que está de recreo.
+   ------------------------------------------------------------------ */
+function fmt(min){const h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
+const ETAPAS_APP=['INF','PRI'];
+function esSesiones(){ return state.centro.computo==='sesiones'; }
+function durSesion(){ return Math.max(5, parseInt(state.centro.dur,10)||45); }
+// Minutos que vale una unidad de cómputo (peso 1): media hora, o una sesión.
+function UMIN(){ return esSesiones() ? durSesion() : 30; }
+// Recreos definidos en la jornada automática, ordenados.
+function recreosDef(){
+  const c=state.centro, out=[];
+  const add=(a,b,et)=>{ if(!a||!b)return; const x=toMin(a),y=toMin(b);
+    if(isNaN(x)||isNaN(y)||!(y>x))return; out.push({ini:x,fin:y,etapa:et}); };
+  if(c.recEtapa){ add(c.recIniINF,c.recFinINF,'INF'); add(c.recreoIni,c.recreoFin,'PRI'); }
+  else add(c.recreoIni,c.recreoFin,'ALL');
+  return out.sort((a,b)=>a.ini-b.ini);
+}
+// Jornada automática → lista de franjas {tipo,ini,fin,etapa?}
+function franjasAuto(){
+  const c=state.centro, ini=toMin(c.inicio), fin=toMin(c.fin), out=[];
+  if(isNaN(ini)||isNaN(fin)||!(fin>ini)) return out;
+  const recs=recreosDef().filter(r=>r.ini>=ini&&r.fin<=fin);
+  const h1=c.bloque60Ini!==false, h2=c.bloque60Fin!==false, D=durSesion(), ses=esSesiones();
+  function llenar(desde,hasta,p60,u60){
+    let cur=desde;
+    if(ses){
+      while(hasta-cur>=D-0.001){ out.push({tipo:'lectiva',ini:fmt(cur),fin:fmt(cur+D)}); cur+=D; }
+      if(hasta-cur>0.001) out.push({tipo:'resto',ini:fmt(cur),fin:fmt(hasta)});
+      return;
+    }
+    if(p60 && hasta-cur>=60){ out.push({tipo:'lectiva',ini:fmt(cur),fin:fmt(cur+60)}); cur+=60; }
+    const lim=(u60 && hasta-cur>=60)?hasta-60:hasta;
+    while(cur<lim-0.001){ const e=Math.min(cur+30,lim); out.push({tipo:'lectiva',ini:fmt(cur),fin:fmt(e)}); cur=e; }
+    if(u60 && hasta-cur>=60){ out.push({tipo:'lectiva',ini:fmt(cur),fin:fmt(cur+60)}); cur+=60; }
+  }
+  let cur=ini;
+  recs.forEach(r=>{
+    if(r.ini>cur) llenar(cur,r.ini,cur===ini,false);
+    out.push({tipo:'recreo',ini:fmt(r.ini),fin:fmt(r.fin),etapa:r.etapa});
+    cur=r.fin;
+  });
+  if(fin>cur) llenar(cur,fin,cur===ini,true);
+  return out;
+}
+// Plantilla editada a mano → misma forma
+function franjasManual(){
+  return (state.centro.franjas||[]).slice()
     .filter(f=>f && f.ini && f.fin && toMin(f.fin)>toMin(f.ini))
     .sort((a,b)=>toMin(a.ini)-toMin(b.ini))
-    .forEach(f=>{
-      const d=toMin(f.fin)-toMin(f.ini);
-      if(f.tipo==='recreo') out.push({recreo:true, ini:f.ini, fin:f.fin});
-      else out.push({i:idx++, ini:f.ini, fin:f.fin, dur:d, w:Math.max(1,Math.round(d/30))});
-    });
-  return out;
+    .map(f=>({tipo:(f.tipo==='recreo'?'recreo':'lectiva'), ini:f.ini, fin:f.fin,
+              etapa:(f.tipo==='recreo'?(f.etapa||'ALL'):undefined)}));
 }
-// Genera las franjas reales: lectivas (con su índice i) + el recreo a hora fija.
+// Tramos reales. Un recreo de TODO el centro no es tramo (es un corte);
+// un recreo de una sola etapa SÍ es tramo, con rec:'INF'|'PRI'.
+let _ttSig=null, _ttVal=null;
 function tramoTimes(){
-  if(esManual()) return tramoTimesManual();
-  const c=state.centro;
-  const ini=toMin(c.inicio), fin=toMin(c.fin), rIni=toMin(c.recreoIni), rFin=toMin(c.recreoFin);
-  const tieneRecreo=(rFin>rIni && rIni>=ini && rFin<=fin);
-  const h1=c.bloque60Ini!==false, h2=c.bloque60Fin!==false;   // 1ª y última hora en bloque de 60 indivisible
-  const out=[]; let idx=0;
-  function llenar(desde,hasta,p60,u60){ let cur=desde;
-    if(p60 && hasta-cur>=60){ out.push({i:idx++,ini:fmt(cur),fin:fmt(cur+60),dur:60,w:2}); cur+=60; }
-    const lim=(u60 && hasta-cur>=60)?hasta-60:hasta;
-    while(cur<lim-0.001){ const e=Math.min(cur+30,lim); out.push({i:idx++,ini:fmt(cur),fin:fmt(e),dur:e-cur,w:(e-cur)/30}); cur=e; }
-    if(u60 && hasta-cur>=60){ out.push({i:idx++,ini:fmt(cur),fin:fmt(cur+60),dur:60,w:2}); cur+=60; } }
-  if(tieneRecreo){ llenar(ini,rIni,h1,false); out.push({recreo:true,ini:fmt(rIni),fin:fmt(rFin)}); llenar(rFin,fin,false,h2); }
-  else llenar(ini,fin,h1,h2);
-  return out;
+  const sig=JSON.stringify(state.centro);
+  if(sig===_ttSig && _ttVal) return _ttVal;
+  const fr = esManual()?franjasManual():franjasAuto();
+  const u=UMIN(), out=[]; let idx=0;
+  fr.forEach(f=>{
+    if(f.tipo==='resto'){ out.push({resto:true, ini:f.ini, fin:f.fin}); return; }
+    if(f.tipo==='recreo' && (!f.etapa || f.etapa==='ALL')){ out.push({recreo:true, ini:f.ini, fin:f.fin}); return; }
+    const d=toMin(f.fin)-toMin(f.ini);
+    out.push({i:idx++, ini:f.ini, fin:f.fin, dur:d, w:Math.max(1,Math.round(d/u)),
+              rec:(f.tipo==='recreo'?f.etapa:null)});
+  });
+  _ttSig=sig; _ttVal=out; return out;
 }
+function lectivos(){ return tramoTimes().filter(t=>!t.recreo && !t.resto); }
 function pesosSlot(){ return lectivos().map(t=>t.w||1); }
-function lectivos(){return tramoTimes().filter(t=>!t.recreo);}
-function numTramos(){return lectivos().length;}
-function fmt(min){const h=Math.floor(min/60),m=min%60;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
+function numTramos(){ return lectivos().length; }
+// ¿el tramo s está bloqueado para esa etapa? (es SU recreo)
+function bloqueadoEn(etapa,s){ const t=lectivos()[s]; return !!(t && t.rec && t.rec===etapa); }
+function etapasConRecreoPropio(){ const set=new Set(); lectivos().forEach(t=>{ if(t.rec)set.add(t.rec); }); return [...set]; }
+function hayRecreosDistintos(){ return etapasConRecreoPropio().length>0; }
+// ¿son dos tramos consecutivos EN EL TIEMPO? (sustituye al viejo "el 4 y el 5 no son contiguos")
+function contigSlots(a,b){ const L=lectivos(); if(b!==a+1)return false; const A=L[a],B=L[b]; return !!(A&&B&&A.fin===B.ini); }
+// Segmentos de tramos seguidos sin cortes, para una etapa (un bloque no cruza el recreo)
+function segmentos(etapa){
+  const segs=[], L=lectivos(); let cur=[];
+  L.forEach((t,i)=>{
+    const bloq = etapa ? (t.rec===etapa) : !!t.rec;
+    const rompe = bloq || (i>0 && L[i-1].fin!==t.ini);
+    if(rompe && cur.length){ segs.push(cur); cur=[]; }
+    if(!bloq) cur.push(i);
+  });
+  if(cur.length) segs.push(cur);
+  return segs;
+}
 function maestroNombre(id){const m=state.maestros.find(x=>x.id===id);return m?m.nombre:'—';}
-function slotsSemana(){return pesosSlot().reduce((a,b)=>a+b,0)*DIAS.length;}  // peso total = medias horas/semana (45 = 22,5 h)
+// Peso lectivo semanal (en unidades de cómputo) de una etapa. Sin etapa → rejilla completa.
+function slotsSemana(etapa){
+  const L=lectivos().filter(t=>!(etapa && t.rec===etapa) && !(!etapa && t.rec));
+  return L.reduce((a,t)=>a+(t.w||1),0)*DIAS.length;
+}
+function slotsSemanaG(gid){ const g=(typeof GRP!=='undefined'&&GRP&&GRP[gid])?GRP[gid]:null; return slotsSemana(g?g.etapa:null); }
 // Filas visuales del horario. Con la rejilla nueva, cada slot YA es su franja real
 // (9:00-10:00 y 13:00-14:00 son bloques de 60 indivisibles; el resto de 30). No hay que fusionar nada.
 function filasVista(gid,noMerge){
-  const out=[];
+  const out=[]; const g=(gid&&typeof GRP!=='undefined'&&GRP&&GRP[gid])?GRP[gid]:null;
   tramoTimes().forEach(t=>{
+    if(t.resto) return;
     if(t.recreo){ out.push({type:'recreo',ini:t.ini,fin:t.fin}); return; }
-    out.push({type:'slot', i:t.i, i2:t.i, ini:t.ini, fin:t.fin, dur:t.dur, primera:(t.dur>=60)});
+    // Si es el recreo de ESTE grupo, para él es una fila de recreo, no un tramo de clase.
+    if(t.rec && g && g.etapa===t.rec){ out.push({type:'recreo',ini:t.ini,fin:t.fin,etapa:t.rec}); return; }
+    out.push({type:'slot', i:t.i, i2:t.i, ini:t.ini, fin:t.fin, dur:t.dur, rec:t.rec||null,
+              primera:(t.dur>=60 && !esSesiones())});
   });
   return out;
 }
@@ -657,7 +756,7 @@ function go(id){
    PANEL 1 · CENTRO
    ========================================================================= */
 function bindCentro(){
-  const map={cNombre:'nombre',cInicio:'inicio',cFin:'fin',cDur:'dur',cRecIni:'recreoIni',cRecFin:'recreoFin',cT30Ini:'tramo30Ini',cT30Fin:'tramo30Fin'};
+  const map={cNombre:'nombre',cInicio:'inicio',cFin:'fin',cDur:'dur',cRecIni:'recreoIni',cRecFin:'recreoFin',cT30Ini:'tramo30Ini',cT30Fin:'tramo30Fin',cRecIniINF:'recIniINF',cRecFinINF:'recFinINF'};
   for(const [el,key] of Object.entries(map)){
     const node=document.getElementById(el);
     node.addEventListener('input',()=>{
@@ -668,6 +767,10 @@ function bindCentro(){
       previewTramos();
     });
   }
+  const chk=document.getElementById('cRecEtapa');
+  if(chk) chk.addEventListener('change',()=>{ state.centro.recEtapa=chk.checked; state.resultado=null; syncCentroUI(); previewTramos(); });
+  const cmp=document.getElementById('cComputo');
+  if(cmp) cmp.addEventListener('change',()=>{ cambiarComputo(cmp.value); });
   document.querySelectorAll('button[data-lineall]').forEach(b=>{
     b.onclick=()=>{
       const v=parseInt(b.dataset.lineall,10);
@@ -686,9 +789,49 @@ function fillCentro(){
   document.getElementById('cRecFin').value=state.centro.recreoFin;
   document.getElementById('cT30Ini').value=state.centro.tramo30Ini||'';
   document.getElementById('cT30Fin').value=state.centro.tramo30Fin||'';
+  document.getElementById('cRecIniINF').value=state.centro.recIniINF||'11:30';
+  document.getElementById('cRecFinINF').value=state.centro.recFinINF||'12:00';
+  document.getElementById('cComputo').value=state.centro.computo||'horas';
+  document.getElementById('cRecEtapa').checked=!!state.centro.recEtapa;
   document.getElementById('centroLabel').textContent=state.centro.nombre;
+  syncCentroUI();
   renderLineas();
   previewTramos();
+}
+// Muestra/oculta lo que depende del modo de cómputo y de los recreos por etapa.
+function syncCentroUI(){
+  const et=!!state.centro.recEtapa, ses=esSesiones();
+  const box=document.getElementById('recEtapaBox'); if(box) box.style.display=et?'':'none';
+  const li=document.getElementById('lblRecIni'), lf=document.getElementById('lblRecFin');
+  if(li) li.innerHTML=et?'Recreo de <strong>Primaria</strong> · inicio':'Recreo · inicio';
+  if(lf) lf.innerHTML=et?'Recreo de <strong>Primaria</strong> · fin':'Recreo · fin';
+  const fd=document.getElementById('fldDur'); if(fd) fd.style.opacity=ses?'1':'.55';
+  ['cT30Ini','cT30Fin'].forEach(id=>{ const n=document.getElementById(id); if(n) n.disabled=ses; });
+}
+// Cambiar entre cómputo por horas y por sesiones: convierte el reparto de materias.
+function cambiarComputo(modo){
+  const antes=UMIN();
+  state.centro.computo=modo;
+  if(modo==='sesiones'){ const d=parseInt(state.centro.dur,10);
+    if(!d || d===30) state.centro.dur=45;   // 30 min como "sesión" no tiene sentido aquí
+  } else { state.centro.dur=30; }
+  const ahora=UMIN();
+  if(antes!==ahora){
+    // horas equivalentes → unidades del nuevo modo, redondeando a entero
+    Object.keys(state.horas||{}).forEach(g=>{
+      Object.keys(state.horas[g]).forEach(m=>{
+        const min=(state.horas[g][m]||0)*antes;
+        state.horas[g][m]=Math.max(0,Math.round(min/ahora));
+      });
+    });
+  }
+  state.resultado=null;
+  document.getElementById('cDur').value=state.centro.dur;
+  syncCentroUI(); previewTramos();
+  if(typeof renderHoras==='function' && activeTab==='materias') renderHoras();
+  toast(modo==='sesiones'
+    ? 'Cómputo por sesiones. Revisa el paso 2: ahora se asignan SESIONES por semana, no horas.'
+    : 'Cómputo por horas. Revisa el paso 2.','info');
 }
 function renderLineas(){
   const box=document.getElementById('lineasBox'); if(!box)return;
@@ -719,14 +862,21 @@ function aplicarLineas(){
   previewTramos();
 }
 function previewTramos(){
-  const lt=lectivos(); const total=slotsSemana();
+  const total=slotsSemana(), ses=esSesiones(), et=hayRecreosDistintos();
+  const ETLBL={INF:'Infantil',PRI:'Primaria'};
   const partes=tramoTimes().map(t=> t.recreo
       ? `<span style="color:#9a3412">▮ recreo ${t.ini}-${t.fin}</span>`
-      : `${t.ini}-${t.fin}${(esManual()||t.dur<state.centro.dur)?` <em>(${t.dur}′)</em>`:''}`);
-  const nf=filasVista().filter(f=>f.type==='slot').length;
+      : t.resto ? `<span style="color:#b91c1c">✕ sobran ${toMin(t.fin)-toMin(t.ini)}′ (${t.ini}-${t.fin})</span>`
+      : t.rec ? `<span style="color:#9a3412">▮ ${t.ini}-${t.fin} recreo ${ETLBL[t.rec]||t.rec} · clase en ${t.rec==='INF'?'Primaria':'Infantil'}</span>`
+      : `${t.ini}-${t.fin}${(esManual()||ses||t.dur<state.centro.dur)?` <em>(${t.dur}′)</em>`:''}`);
+  const nf=lectivos().length;
+  const linea = et
+    ? `<strong>${nf} franjas/día</strong> → Infantil ${ses?slotsSemana('INF')+' sesiones':fmtH(slotsSemana('INF'))+' h'} · Primaria ${ses?slotsSemana('PRI')+' sesiones':fmtH(slotsSemana('PRI'))+' h'} a la semana.`
+    : `<strong>${nf} franjas/día</strong> → ${ses?total+' sesiones ('+fmtH(total)+' h)':fmtH(total)+' h'} lectivas a la semana por grupo.`;
   document.getElementById('tramoPreview').innerHTML=
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`+
-    `<div><strong>${nf} franjas/día</strong> → ${fmtH(total)} h lectivas a la semana por grupo.<br>${partes.join(' · ')}</div>`;
+    `<div>${linea}<br>${partes.join(' · ')}</div>`;
+  pintaAvisosJornada();
   // sugerencia de reparto si coincide con un preset conocido
   const box=document.getElementById('presetBox'); const pre=presetHoras(total);
   if(pre){
@@ -737,12 +887,43 @@ function previewTramos(){
   renderFranjaEditor();
   renderPlantillaVacia();
 }
+// Avisos sobre la jornada: minutos sueltos, recreos solapados o descuadrados.
+function avisosJornada(){
+  const av=[], tt=tramoTimes(), ses=esSesiones();
+  tt.forEach(t=>{ if(t.resto) av.push(`Con sesiones de ${durSesion()} min sobran ${toMin(t.fin)-toMin(t.ini)} minutos al final de la jornada (${t.ini}–${t.fin}). Ajusta la hora de fin, la duración de la sesión o la del recreo.`); });
+  if(!esManual() && state.centro.recEtapa){
+    const r=recreosDef();
+    if(r.length<2) av.push('Has marcado recreos distintos por etapa pero falta definir uno de los dos.');
+    else if(r[0].fin>r[1].ini) av.push('Los recreos de Infantil y Primaria se solapan. Escalónalos: uno detrás del otro.');
+    if(ses){ r.forEach(x=>{ if((x.fin-x.ini)!==durSesion())
+      av.push(`Con cómputo por sesiones, el recreo de ${x.etapa==='INF'?'Infantil':'Primaria'} debe durar exactamente una sesión (${durSesion()} min) para que la rejilla de las dos etapas encaje.`); }); }
+    else { r.forEach(x=>{ if((x.fin-x.ini)%30!==0)
+      av.push(`El recreo de ${x.etapa==='INF'?'Infantil':'Primaria'} dura ${x.fin-x.ini} min y no es múltiplo de 30: no encaja en la rejilla de medias horas.`); }); }
+  }
+  const ls=lectivos();
+  if(ses && ls.length && !ls.every(t=>t.dur===ls[0].dur))
+    av.push('En cómputo por sesiones todas las franjas lectivas deben durar lo mismo. Revisa la plantilla.');
+  return av;
+}
+function pintaAvisosJornada(){
+  const box=document.getElementById('tramoAvisos'); if(!box)return;
+  const av=avisosJornada();
+  box.innerHTML = av.length
+    ? `<div class="notice warn" style="margin-top:6px"><div><strong>⚠ Revisa la jornada</strong><ul style="margin:4px 0 0 18px">${av.map(a=>`<li>${a}</li>`).join('')}</ul></div></div>`
+    : '';
+}
 function renderPlantillaVacia(){
   const cont=document.getElementById('plantillaVacia'); if(!cont)return;
   let html='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
+  const ETL={INF:'Infantil',PRI:'Primaria'};
   filasVista().forEach(t=>{
     if(t.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${t.ini}-${t.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const badge=t.dur>=60?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':((esManual()||t.dur<state.centro.dur)?`<br><span style="font-weight:600;color:#9a3412">${t.dur}′</span>`:'');
+    const badge=(t.dur>=60&&!esSesiones())?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':((esManual()||esSesiones()||t.dur<state.centro.dur)?`<br><span style="font-weight:600;color:#9a3412">${t.dur}′</span>`:'');
+    if(t.rec){
+      const otra=t.rec==='INF'?'Primaria':'Infantil';
+      html+=`<tr><td class="timecol">${t.ini}<br>${t.fin}${badge}</td>${DIAS.map(()=>`<td class="cell recreo-row" style="font-size:10px">RECREO ${ETL[t.rec].toUpperCase()}<br><span style="color:#475569;font-weight:600">clase en ${otra}</span></td>`).join('')}</tr>`;
+      return;
+    }
     html+=`<tr><td class="timecol">${t.ini}<br>${t.fin}${badge}</td>${DIAS.map(()=>'<td class="cell empty">·</td>').join('')}</tr>`;
   });
   html+='</tbody></table>';
@@ -759,14 +940,23 @@ const PRESETS_JORNADA=[
   {id:'std', nombre:'9–14 estándar (Andalucía)', f:[['l','09:00','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['l','11:00','11:30'],['l','11:30','12:00'],['r','12:00','12:30'],['l','12:30','13:00'],['l','13:00','14:00']]},
   {id:'r1130', nombre:'9–14 con recreo a las 11:30', f:[['l','09:00','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['l','11:00','11:30'],['r','11:30','12:00'],['l','12:00','12:30'],['l','12:30','13:00'],['l','13:00','14:00']]},
   {id:'t30', nombre:'9–14 todo en tramos de 30′', f:[['l','09:00','09:30'],['l','09:30','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['l','11:00','11:30'],['l','11:30','12:00'],['r','12:00','12:30'],['l','12:30','13:00'],['l','13:00','13:30'],['l','13:30','14:00']]},
+  {id:'esc', nombre:'9–14 · recreos escalonados (Infantil 11:30, Primaria 12:00)', f:[['l','09:00','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['l','11:00','11:30'],['ri','11:30','12:00'],['rp','12:00','12:30'],['l','12:30','13:00'],['l','13:00','14:00']]},
+  {id:'s45', nombre:'9–14 · 6 sesiones de 45 min con recreo de 30', f:[['l','09:00','09:45'],['l','09:45','10:30'],['l','10:30','11:15'],['r','11:15','11:45'],['l','11:45','12:30'],['l','12:30','13:15'],['l','13:15','14:00']]},
   {id:'dosrec', nombre:'9–14 con dos recreos', f:[['l','09:00','10:00'],['l','10:00','11:00'],['r','11:00','11:30'],['l','11:30','12:00'],['l','12:00','12:30'],['r','12:30','13:00'],['l','13:00','14:00']]},
   {id:'ocho', nombre:'8–13 (jornada adelantada)', f:[['l','08:00','09:00'],['l','09:00','09:30'],['l','09:30','10:00'],['l','10:00','10:30'],['l','10:30','11:00'],['r','11:00','11:30'],['l','11:30','12:00'],['l','12:00','13:00']]},
 ];
-function presetAFranjas(p){ return p.f.map(x=>({tipo:x[0]==='r'?'recreo':'lectiva', ini:x[1], fin:x[2]})); }
+// 'l' = lectiva · 'r' = recreo de todo el centro · 'ri' = recreo solo Infantil · 'rp' = recreo solo Primaria
+function presetAFranjas(p){ return p.f.map(x=>{
+  const es=(x[0]!=='l');
+  const et=x[0]==='ri'?'INF':x[0]==='rp'?'PRI':'ALL';
+  return es?{tipo:'recreo', etapa:et, ini:x[1], fin:x[2]}:{tipo:'lectiva', ini:x[1], fin:x[2]};
+}); }
 // Congela la jornada automática actual como plantilla editable
 function franjasDesdeAuto(){
   const guardado=state.centro.franjas; state.centro.franjas=null;
-  const arr=tramoTimes().map(t=>({tipo:t.recreo?'recreo':'lectiva', ini:t.ini, fin:t.fin}));
+  const arr=tramoTimes().filter(t=>!t.resto).map(t=>({
+      tipo:(t.recreo||t.rec)?'recreo':'lectiva', ini:t.ini, fin:t.fin,
+      etapa:(t.recreo?'ALL':(t.rec||undefined))}));
   state.centro.franjas=guardado;
   return arr;
 }
@@ -784,7 +974,11 @@ function validaFranjas(){
     if(!(b>a)){ errores.push(`${et}: la hora de fin tiene que ser posterior a la de inicio.`); return; }
     if(x.tipo!=='recreo'){
       lectivas++;
-      if(b-a!==30 && b-a!==60) errores.push(`${et}: dura ${b-a} minutos. Las franjas lectivas tienen que ser de 30 o de 60 minutos.`);
+      if(esSesiones()){
+        if(b-a!==durSesion()) errores.push(`${et}: dura ${b-a} minutos. Con cómputo por sesiones todas las franjas lectivas deben durar ${durSesion()} minutos.`);
+      } else if(b-a!==30 && b-a!==60){
+        errores.push(`${et}: dura ${b-a} minutos. Con cómputo por horas las franjas lectivas tienen que ser de 30 o de 60 minutos. Si tu centro trabaja con sesiones de 45, cambia arriba «Cómo se cuentan las sesiones» a «Por sesiones».`);
+      }
     }
     if(n>0){
       const p=f[n-1], pb=toMin(p.fin);
@@ -798,10 +992,14 @@ function validaFranjas(){
 // En modo manual, los campos de jornada automática no pintan nada
 function bloquearCamposJornada(){
   const man=esManual();
-  ['cInicio','cFin','cDur','cRecIni','cRecFin','cT30Ini','cT30Fin'].forEach(id=>{
+  ['cInicio','cFin','cDur','cRecIni','cRecFin','cT30Ini','cT30Fin','cRecEtapa','cRecIniINF','cRecFinINF'].forEach(id=>{
     const n=document.getElementById(id); if(!n)return;
     n.disabled=man; n.style.opacity=man?'.45':''; n.style.cursor=man?'not-allowed':'';
   });
+  // En modo manual los recreos por etapa se marcan franja a franja, en la tabla de abajo.
+  const box=document.getElementById('recEtapaBox');
+  if(box && man) box.style.display='none';
+  if(!man && typeof syncCentroUI==='function') syncCentroUI();
 }
 function renderFranjaEditor(){
   const box=document.getElementById('franjaEditor'), bar=document.getElementById('franjaBotonera');
@@ -837,18 +1035,25 @@ function renderFranjaEditor(){
   }
 
   if(!man){ box.innerHTML=''; return; }
-  // si el usuario está escribiendo dentro del editor, no lo reconstruimos (perdería el foco)
-  if(box.contains(document.activeElement)){ pintarAvisoFranjas(v); return; }
+  // si el usuario está ESCRIBIENDO en un campo del editor, no lo reconstruimos (perdería el foco);
+  // los botones de acción (borrar/mover) sí deben repintar, así que no cuentan.
+  const foco=document.activeElement;
+  if(foco && box.contains(foco) && /^(INPUT|SELECT)$/.test(foco.tagName)){ pintarAvisoFranjas(v); return; }
 
   const f=state.centro.franjas;
   let html='<div class="tbl-wrap" style="margin-bottom:10px"><table style="width:100%"><thead><tr>'+
-    '<th style="width:34px">#</th><th>Tipo</th><th>Empieza</th><th>Termina</th><th>Dura</th><th style="width:120px">Mover / quitar</th></tr></thead><tbody>';
+    '<th style="width:34px">#</th><th>Tipo</th><th>¿Para quién?</th><th>Empieza</th><th>Termina</th><th>Dura</th><th style="width:120px">Mover / quitar</th></tr></thead><tbody>';
   f.forEach((x,n)=>{
     const d=(x.ini&&x.fin)?(toMin(x.fin)-toMin(x.ini)):0;
-    const mal=(x.tipo!=='recreo') && (d!==30 && d!==60);
+    const mal=(x.tipo!=='recreo') && (esSesiones() ? (d!==durSesion()) : (d!==30 && d!==60));
+    const _et=x.etapa||'ALL';
+    const celdaEtapa = x.tipo==='recreo'
+      ? `<td><select data-fetapa="${n}"><option value="ALL"${_et==='ALL'?' selected':''}>Todo el centro</option><option value="INF"${_et==='INF'?' selected':''}>Solo Infantil</option><option value="PRI"${_et==='PRI'?' selected':''}>Solo Primaria</option></select></td>`
+      : '<td class="small muted">—</td>';
     html+=`<tr${mal?' style="background:#fef2f2"':''}>
       <td class="small muted">${n+1}</td>
       <td><select data-ftipo="${n}"><option value="lectiva"${x.tipo!=='recreo'?' selected':''}>Sesión lectiva</option><option value="recreo"${x.tipo==='recreo'?' selected':''}>Recreo</option></select></td>
+      ${celdaEtapa}
       <td><input type="time" data-fini="${n}" value="${x.ini||''}"></td>
       <td><input type="time" data-ffin="${n}" value="${x.fin||''}"></td>
       <td class="small${mal?'':' muted'}">${d>0?d+'′':'—'}</td>
@@ -860,11 +1065,12 @@ function renderFranjaEditor(){
   box.innerHTML=html;
 
   box.querySelectorAll('[data-ftipo]').forEach(s=>s.onchange=()=>{ state.centro.franjas[+s.dataset.ftipo].tipo=s.value; previewTramos(); });
+  box.querySelectorAll('[data-fetapa]').forEach(s=>s.onchange=()=>{ state.centro.franjas[+s.dataset.fetapa].etapa=s.value; state.resultado=null; previewTramos(); });
   box.querySelectorAll('[data-fini]').forEach(i=>i.onchange=()=>{ state.centro.franjas[+i.dataset.fini].ini=i.value; ordenarFranjas(); previewTramos(); });
   box.querySelectorAll('[data-ffin]').forEach(i=>i.onchange=()=>{ state.centro.franjas[+i.dataset.ffin].fin=i.value; ordenarFranjas(); previewTramos(); });
-  box.querySelectorAll('[data-fup]').forEach(b=>b.onclick=()=>moverFranja(+b.dataset.fup,-1));
-  box.querySelectorAll('[data-fdown]').forEach(b=>b.onclick=()=>moverFranja(+b.dataset.fdown,1));
-  box.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=()=>{ state.centro.franjas.splice(+b.dataset.fdel,1); previewTramos(); });
+  box.querySelectorAll('[data-fup]').forEach(b=>b.onclick=()=>{ b.blur(); moverFranja(+b.dataset.fup,-1); });
+  box.querySelectorAll('[data-fdown]').forEach(b=>b.onclick=()=>{ b.blur(); moverFranja(+b.dataset.fdown,1); });
+  box.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=()=>{ b.blur(); state.centro.franjas.splice(+b.dataset.fdel,1); state.resultado=null; previewTramos(); });
   pintarAvisoFranjas(v);
 }
 function pintarAvisoFranjas(v){
@@ -882,8 +1088,9 @@ function pintarAvisoFranjas(v){
 function addFranja(tipo){
   const f=state.centro.franjas;
   const ult=f.length?f[f.length-1].fin:'09:00';
-  const a=toMin(ult), d=(tipo==='recreo')?30:60;
-  f.push({tipo, ini:fmt(a), fin:fmt(Math.min(a+d,23*60+59))});
+  const a=toMin(ult), d=(tipo==='recreo')?(esSesiones()?durSesion():30):(esSesiones()?durSesion():60);
+  f.push(tipo==='recreo' ? {tipo, etapa:'ALL', ini:fmt(a), fin:fmt(Math.min(a+d,23*60+59))}
+                         : {tipo, ini:fmt(a), fin:fmt(Math.min(a+d,23*60+59))});
   previewTramos();
 }
 function moverFranja(n,dir){
@@ -904,12 +1111,18 @@ function moverFranja(n,dir){
    ========================================================================= */
 function materiasDeEtapa(etapa){return MATERIAS.filter(m=>m.etapas.includes(etapa));}
 // La tabla se muestra y edita en HORAS (con medias: 0,5/1/1,5…). Internamente todo va en tramos de 30' (horas×2).
-function tramosAHoras(t){return (t||0)/2;}
-function fmtH(t){const h=(t||0)/2; return Number.isInteger(h)?String(h):h.toFixed(1).replace('.',',');}
+// Una "unidad" es media hora (modo horas) o una sesión (modo sesiones).
+function tramosAHoras(t){ return (t||0)*UMIN()/60; }
+function horasAU(h){ return Math.round((h||0)*60/UMIN()); }        // horas → unidades de cómputo
+function fmtH(t){ const h=tramosAHoras(t);
+  return Number.isInteger(h)?String(h):(Math.round(h*100)/100).toFixed(2).replace(/0$/,'').replace(/[.,]$/,'').replace('.',','); }
+// Etiqueta de la unidad en la que se asignan las materias
+function uLabel(n){ return esSesiones() ? (n===1?'sesión':'sesiones') : 'h'; }
 function renderHoras(){
   const tbl=document.getElementById('horasTable');
   const filas=MATERIAS.filter(m=>GRUPOS.some(g=>m.etapas.includes(g.etapa)));
-  let html='<thead><tr><th style="min-width:150px">Materia (horas/semana)</th>';
+  const ses=esSesiones();
+  let html=`<thead><tr><th style="min-width:150px">Materia (${ses?'sesiones':'horas'}/semana)</th>`;
   GRUPOS.forEach(g=>html+=`<th title="${g.nombre}">${g.id.startsWith('INF')?g.id.replace('INF','I'):g.id+'º'}</th>`);
   html+='</tr></thead><tbody>';
   filas.forEach(m=>{
@@ -917,13 +1130,13 @@ function renderHoras(){
     GRUPOS.forEach(g=>{
       const aplica=m.etapas.includes(g.etapa);
       if(!aplica){html+='<td style="background:#f8fafc"></td>';return;}
-      const v=state.horas[g.id]?.[m.id]||0;       // tramos
-      html+=`<td><input class="hours-input" type="number" min="0" max="10" step="0.5" value="${tramosAHoras(v)}" data-g="${g.id}" data-m="${m.id}"></td>`;
+      const v=state.horas[g.id]?.[m.id]||0;       // unidades de cómputo
+      html+=`<td><input class="hours-input" type="number" min="0" max="${ses?14:10}" step="${ses?1:0.5}" value="${ses?v:tramosAHoras(v)}" data-g="${g.id}" data-m="${m.id}"></td>`;
     });
     html+='</tr>';
   });
   // fila totales (en horas)
-  html+='<tr style="background:#f3f4f6;font-weight:700"><td>Total lectivo / semana</td>';
+  html+=`<tr style="background:#f3f4f6;font-weight:700"><td>Total lectivo / semana${ses?' <span class="small muted">(sesiones)</span>':''}</td>`;
   GRUPOS.forEach(g=>html+=`<td id="tot-${g.id}"></td>`);
   html+='</tr></tbody>';
   tbl.innerHTML=html;
@@ -932,13 +1145,13 @@ function renderHoras(){
       const g=inp.dataset.g,m=inp.dataset.m;
       let h=parseFloat((inp.value||'0').replace(',','.'));
       if(isNaN(h)||h<0)h=0;
-      h=Math.round(h*2)/2;                          // ajustar a media hora
       if(!state.horas[g])state.horas[g]={};
-      state.horas[g][m]=Math.round(h*2);            // guardar en tramos
+      if(esSesiones()){ state.horas[g][m]=Math.round(h); }        // sesiones enteras
+      else { h=Math.round(h*2)/2; state.horas[g][m]=Math.round(h*2); }   // medias horas
       updTotales();
     };
     inp.addEventListener('input',apply);
-    inp.addEventListener('change',()=>{ apply(); const v=state.horas[inp.dataset.g]?.[inp.dataset.m]||0; inp.value=tramosAHoras(v); }); // normaliza al salir
+    inp.addEventListener('change',()=>{ apply(); const v=state.horas[inp.dataset.g]?.[inp.dataset.m]||0; inp.value=esSesiones()?v:tramosAHoras(v); }); // normaliza al salir
   });
   updTotales();
   renderAutonomia();
@@ -980,14 +1193,16 @@ function renderAutonomia(){
 }
 function totalGrupo(g){return Object.values(state.horas[g]||{}).reduce((a,b)=>a+(parseInt(b)||0),0);} // en tramos (uso interno)
 function updTotales(){
-  const needT=slotsSemana();                        // tramos (45) = 22,5 h
+  const ses=esSesiones();
   GRUPOS.forEach(g=>{
     const c=document.getElementById('tot-'+g.id); if(!c)return;
-    const t=totalGrupo(g.id);                        // tramos
-    c.textContent=fmtH(t)+' h';
-    if(t===needT){ c.className='total-ok'; c.title='Cuadra ('+fmtH(needT)+' h lectivas)'; }
-    else if(t>needT){ c.className='total-bad'; c.title='Se pasa: sobran '+fmtH(t-needT)+' h (máx. '+fmtH(needT)+' h)'; }
-    else { c.className='total-warn'; c.title='Quedarán '+fmtH(needT-t)+' h libres'; }
+    const needT=slotsSemanaG(g.id);                  // depende de la etapa: los recreos pueden ser distintos
+    const t=totalGrupo(g.id);
+    c.textContent= ses ? (t+' ('+fmtH(t)+' h)') : (fmtH(t)+' h');
+    const U=n=>ses?(n+' '+uLabel(n)):(fmtH(n)+' h');
+    if(t===needT){ c.className='total-ok'; c.title='Cuadra ('+U(needT)+' lectivas)'; }
+    else if(t>needT){ c.className='total-bad'; c.title='Se pasa: sobran '+U(t-needT)+' (máx. '+U(needT)+')'; }
+    else { c.className='total-warn'; c.title='Quedarán '+U(needT-t)+' libres'; }
   });
 }
 
@@ -1012,7 +1227,7 @@ function renderMaestros(){
     }
     const dias=m.dias?m.dias.join(' '):'Todos los días';
     const tr=m.tramos&&m.tramos.length?(' · tramos '+m.tramos.map(x=>x+1).join(',')):'';
-    const red=m.reduccion>0?` · <span style="color:#b45309">−${fmtH(Math.round(m.reduccion*2))} h no lectivas</span>`:'';
+    const red=m.reduccion>0?` · <span style="color:#b45309">−${fmtH(horasAU(m.reduccion))} h no lectivas</span>`:'';
     html+=`<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CAT_COLOR[cat]};margin-right:7px;vertical-align:middle"></span><strong>${m.nombre}</strong></td><td>${m.rol}</td><td class="small muted">${dias}${tr}${red}</td>
       <td style="white-space:nowrap"><button class="btn btn-sm btn-icon" data-edit="${m.id}">✎</button>
       <button class="btn btn-sm btn-icon" data-del="${m.id}">🗑</button></td></tr>`;
@@ -1404,14 +1619,7 @@ function buildEngineState(){
     dias.forEach(d=>{const di=DIAS.indexOf(d); tramos.forEach(t=>set.add(key(di,t)));});
     avail[m.id]=set;
   });
-  return {ND,NS,grid,busy:{},avail,segs:segmentos()};
-}
-// segmentos = rangos de tramos lectivos contiguos separados por el recreo (un bloque no cruza el recreo)
-function segmentos(){
-  const segs=[]; let cur=[];
-  tramoTimes().forEach(t=>{ if(t.recreo){ if(cur.length){segs.push(cur);cur=[];} } else cur.push(t.i); });
-  if(cur.length) segs.push(cur);
-  return segs;
+  return {ND,NS,grid,busy:{},avail,segs:segmentos(null)};
 }
 function isAvail(es,t,d,s){const a=es.avail[t];return !a||a.has(key(d,s));}
 function tBusy(es,t,d,s){return es.busy[t]&&es.busy[t].has(key(d,s));}
@@ -1607,7 +1815,7 @@ function chequeoCargas(){
         base=nd*pesoTotal;
       }
     }
-    avail[m.id]=Math.max(0, base - Math.round((m.reduccion||0)*2));   // descontar horas no lectivas
+    avail[m.id]=Math.max(0, base - horasAU(m.reduccion||0));   // descontar horas no lectivas
   });
   GRUPOS.forEach(g=>{
     materiasDeEtapa(g.etapa).forEach(m=>{ if(m.rol==='religion')return;
@@ -1626,7 +1834,7 @@ function nombreMaestro(id){const m=state.maestros.find(x=>x.id===id);return m?m.
 
 // === ANÁLISIS DE VIABILIDAD (avisa de dificultades por falta de horario) ===
 function analizarViabilidad(){
-  const NS=numTramos(), ND=DIAS.length, needG=slotsSemana();
+  const NS=numTramos(), ND=DIAS.length, needG=slotsSemana('PRI');
   const ch=chequeoCargas();                       // load, avail por maestro
   const maestrosUsados=state.maestros.filter(m=>ch.load[m.id]>0);
   const filas=maestrosUsados.map(m=>{
@@ -1636,14 +1844,14 @@ function analizarViabilidad(){
     const partes=[];
     if(m.dias)partes.push('días: '+m.dias.join('/'));
     if(m.tramos&&m.tramos.length)partes.push('tramos limitados');
-    if(m.reduccion>0)partes.push(fmtH(Math.round(m.reduccion*2))+' h no lectivas');
+    if(m.reduccion>0)partes.push(fmtH(horasAU(m.reduccion))+' h no lectivas');
     const restr=partes.join(' · ');
     return {m,l,a,holg,clase,restr};
   }).sort((x,y)=>x.holg-y.holg);
 
   // chequeos de grupo: ¿las horas asignadas caben en la jornada lectiva?
   const gruposMal=[];
-  GRUPOS.forEach(g=>{ const t=totalGrupo(g.id); if(t>needG) gruposMal.push({g,t}); });
+  GRUPOS.forEach(g=>{ const t=totalGrupo(g.id); if(t>slotsSemanaG(g.id)) gruposMal.push({g,t}); });
 
   // chequeos de religión por incompatibilidad de días cat/ev
   const relMal=[];
@@ -1706,13 +1914,14 @@ function generar(){
   setTimeout(()=>{ runEngine(btn); },60);
 }
 function validar(){
-  const p=[]; const need=slotsSemana();
+  const p=[];
   if(esManual()){
     const v=validaFranjas();
     v.errores.forEach(e=>p.push('Plantilla del horario (paso 1) → '+e));
     if(!numTramos()) p.push('Plantilla del horario (paso 1): no hay ninguna franja lectiva, así que no hay dónde colocar las clases.');
   }
-  GRUPOS.forEach(g=>{ const t=totalGrupo(g.id); if(t>need) p.push(`${g.nombre}: las horas suman ${fmtH(t)} h y no caben en ${fmtH(need)} h lectivas. Quita ${fmtH(t-need)} h.`); });
+  GRUPOS.forEach(g=>{ const t=totalGrupo(g.id), need=slotsSemanaG(g.id);
+    if(t>need) p.push(`${g.nombre}: el reparto suma ${fmtH(t)} h y no cabe en ${fmtH(need)} h lectivas. Quita ${fmtH(t-need)} h.`); });
   GRUPOS.forEach(g=>{
     const mats=materiasDeEtapa(g.etapa).filter(m=>m.rol!=='religion'&&(state.horas[g.id]?.[m.id]||0)>0);
     mats.forEach(m=>{ if(!state.asig[g.id]?.[m.id]) p.push(`${g.nombre}: falta asignar maestro a ${m.nombre}.`); });
@@ -1730,30 +1939,67 @@ let mcRelFail=null;
 function mcSolve(rnd,deadline,capEsp){
   capEsp=capEsp||2;   // tope de medias/día para las especialidades (2 = 1 h)
   mcRelFail=null;
-  const ND=DIAS.length, W=pesosSlot(), NS=W.length, segs=segmentos();
+  const ND=DIAS.length, W=pesosSlot(), NS=W.length;
+  // Segmentos (tramos seguidos sin cortes) POR ETAPA: con recreos escalonados,
+  // Infantil y Primaria tienen cortes en sitios distintos.
+  const SEGS={}; ETAPAS_APP.forEach(e=>SEGS[e]=segmentos(e));
+  const segs=segmentos(null);
+  const UNIFORME=W.every(x=>x===W[0]);   // rejilla de sesiones iguales (45', 50'...)
+  if(UNIFORME) capEsp=Math.max(1,capEsp-1);   // 1 sesión de especialidad al día (antes: 1 h)
   const grid={}; GRUPOS.forEach(g=>{grid[g.id]=[];for(let d=0;d<ND;d++)grid[g.id][d]=new Array(NS).fill(null);});
+  // BLOQUEO: el recreo de una etapa no es hora de clase PARA ESA ETAPA (la otra sí da clase ahí).
+  const _lect=lectivos();
+  GRUPOS.forEach(g=>{ for(let s=0;s<NS;s++){ const t=_lect[s];
+    if(t && t.rec && t.rec===g.etapa){ for(let d=0;d<ND;d++) grid[g.id][d][s]={band:{recreo:t.rec},bloq:true}; } } });
+  // Contigüidad real en el tiempo (antes estaba fijado a "el tramo 4 y el 5 no son contiguos")
+  const CT=(a,b)=>contigSlots(a,b);
+  const antes=(g,d,s)=>(s>0 && CT(s-1,s))?grid[g][d][s-1]:null;
+  const despues=(g,d,s)=>(s<NS-1 && CT(s,s+1))?grid[g][d][s+1]:null;
+  // Primer tramo después del corte principal (antes era el 5, fijo)
+  const S_POST=(function(){ for(let s=1;s<NS;s++){ if(!CT(s-1,s)) return s; } return Math.min(NS-1,Math.ceil(NS/2)); })();
+  const S_ULT=NS-1;   // último tramo del día (antes estaba fijado al 6)
   const busyAt=(p,d,s)=>{ for(const g of GRUPOS){const c=grid[g.id][d][s]; if(!c)continue; if(c.band){if(c.band.cat===p||c.band.ev===p||c.band.ae===p)return true;}else if(c.prof===p)return true;} return false; };
   // bloques contiguos cuya suma de pesos = target (para religión 1,5h = 3 medias horas)
-  function bloquesPeso(target){ const out=[]; for(const seg of segs){ for(let a=0;a<seg.length;a++){ let sum=0; for(let b=a;b<seg.length;b++){ sum+=W[seg[b]]; if(sum===target){out.push(seg.slice(a,b+1));break;} if(sum>target)break; } } } return out; }
+  function bloquesPeso(target,etapa){ const out=[]; const src=(etapa&&SEGS[etapa])?SEGS[etapa]:segs;
+    for(const seg of src){ for(let a=0;a<seg.length;a++){ let sum=0; for(let b=a;b<seg.length;b++){ sum+=W[seg[b]]; if(sum===target){out.push(seg.slice(a,b+1));break;} if(sum>target)break; } } } return out; }
   // REGLA DURA: máximo 1,5 h (3 medias) de la MISMA materia por día → también impide 2 h seguidas.
   // La Globalizada de Infantil está exenta (toda la jornada es globalizada por naturaleza).
-  const CAPDIA=3;
+  // En modo SESIONES la unidad es la sesión: 2 sesiones/día equivalen al viejo tope de 1,5 h.
+  const CAPDIA=UNIFORME?2:3;
   // Las ESPECIALIDADES se topan en 1 h/día (2 medias): así no salen 1,5 h seguidas de E. Física.
   // capEsp llega a 3 solo cuando el motor ya ha probado mucho y no encuentra solución con el tope de 2.
   const capDe=m=>(ESP(m)?capEsp:CAPDIA);
   function pesoDiaDe(gr,d,m){ let c=0; for(let s=0;s<NS;s++){ const cc=grid[gr][d][s]; if(cc&&!cc.band&&cc.mat===m)c+=W[s]; } return c; }
   const cabeCap=(gr,d,m,w)=>(m==='GLO')||(pesoDiaDe(gr,d,m)+w<=capDe(m));
   // 1) RELIGIÓN en bloque de peso 3
-  const relTasks=GRUPOS.filter(g=>(state.horas[g.id]?.REL||0)>0).map(g=>{const r=state.religion[g.id]||{};return {g:g.id,cat:r.cat,ev:r.ev||null,ae:r.ae||state.tutores[g.id]||null,len:state.horas[g.id].REL};});
-  const relBloques=bloquesPeso(3);
+  // Con cómputo por horas, la religión va en UN bloque (1,5 h = 3 medias horas).
+  // Con sesiones de 45', una "sesión y media" no existe: se colocan N sesiones sueltas,
+  // cada una en un día distinto, que es como funcionan de verdad esos centros.
+  const relTasks=[];
+  GRUPOS.filter(g=>(state.horas[g.id]?.REL||0)>0).forEach(g=>{
+    const r=state.religion[g.id]||{}, n=state.horas[g.id].REL;
+    const base={g:g.id,cat:r.cat,ev:r.ev||null,ae:r.ae||state.tutores[g.id]||null};
+    if(UNIFORME){ for(let k=0;k<n;k++) relTasks.push({...base,len:1,unaPorDia:true}); }
+    else relTasks.push({...base,len:n});
+  });
+  // El bloque de religión vale lo que valga en ese grupo (1,5 h = 3 medias, o N sesiones),
+  // y se busca dentro de los segmentos de SU etapa (los recreos pueden ser distintos).
+  const _relCache={};
+  const relBloquesDe=(etapa,len)=>{ const k=etapa+'|'+len; if(!_relCache[k])_relCache[k]=bloquesPeso(len,etapa); return _relCache[k]; };
   function relLibre(prof,d,s){ if(!prof)return true; for(const g of GRUPOS){ const c=grid[g.id][d][s]; if(!c)continue; if(c.band){ if(c.band.cat===prof||c.band.ev===prof||c.band.ae===prof)return false; } else if(c.prof===prof)return false; } return true; }
   function relOptsDe(t){ const opts=[];
-    for(let d=0;d<ND;d++)for(const ss of relBloques){ let ok=true;
+    const _et=(GRP[t.g]||{}).etapa, _len=Math.max(1,t.len||(UNIFORME?1:3));
+    const yaEseDia=d=>{ for(let s=0;s<NS;s++){ const c=grid[t.g][d][s]; if(c&&c.mat==='REL')return true; } return false; };
+    for(let d=0;d<ND;d++){ const rep=(t.unaPorDia&&yaEseDia(d));
+      for(const ss of relBloquesDe(_et,_len)){ let ok=true;
       for(const s of ss){ if(grid[t.g][d][s]){ok=false;break;}
         if(t.cat&&(!mcAvail(t.cat,d,s)||busyAt(t.cat,d,s)||!relLibre(t.cat,d,s))){ok=false;break;}   // la católica no puede estar ya en otro grupo
         if(t.ev&&(!mcAvail(t.ev,d,s)||busyAt(t.ev,d,s)||!relLibre(t.ev,d,s))){ok=false;break;}        // ni la evangélica
         if(t.ae&&(!mcAvail(t.ae,d,s)||busyAt(t.ae,d,s)||!relLibre(t.ae,d,s))){ok=false;break;} }      // ni el tutor (Atención Educativa)
-      if(ok)opts.push({d,ss}); }
+      if(ok)opts.push({d,ss,rep}); } }
+    // Preferimos repartir las sesiones de religión en días distintos, pero si la
+    // disponibilidad del maestro/a no lo permite, vale repetir día antes que fallar.
+    opts.sort((a,b)=>(a.rep?1:0)-(b.rep?1:0));
     return opts; }
   function placeRel(pend){ if(!pend.length)return true;
     let bi=0, bOpts=relOptsDe(pend[0]);                       // MRV: coloca primero la banda con menos huecos válidos (la más atada: p.ej. la evangélica de un solo día)
@@ -1871,7 +2117,7 @@ function mcSolve(rnd,deadline,capEsp){
         const putPar=()=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,2))continue; for(const [a,b] of [[1,2],[3,4]]){ if(grid[cl.g][d][a]||grid[cl.g][d][b])continue; if(!mcAvail(cl.prof,d,a)||!mcAvail(cl.prof,d,b)||!profLibreG(cl.prof,d,a)||!profLibreG(cl.prof,d,b))continue; c.push([{d,s:a},{d,s:b}]); } } if(!c.length)return false; let cand=repartir(cl.g,libres(conPref(cl.g,c))); if(temprano())cand=cand.slice().sort((A,B)=>A[0].s-B[0].s); const x=cand[0]; grid[cl.g][x[0].d][x[0].s]={mat:cl.mat,prof:cl.prof}; grid[cl.g][x[1].d][x[1].s]={mat:cl.mat,prof:cl.prof}; return true; };
         const put30=()=>{ const c=[]; for(let d=0;d<ND;d++){ if(!cabeCap(cl.g,d,cl.mat,1))continue; for(let s=0;s<NS;s++){ if(W[s]!==1||grid[cl.g][d][s])continue; if(!mcAvail(cl.prof,d,s)||!profLibreG(cl.prof,d,s))continue; c.push({d,s}); } } if(!c.length)return false;
           // preferir las celdas que NO alargan un bloque ya existente por encima de 1 h
-          const noAlarga=c.filter(x=>{ const pv=(x.s>0&&x.s!==5)?grid[cl.g][x.d][x.s-1]:null, nx=(x.s<NS-1&&x.s!==4)?grid[cl.g][x.d][x.s+1]:null;
+          const noAlarga=c.filter(x=>{ const pv=antes(cl.g,x.d,x.s), nx=despues(cl.g,x.d,x.s);
             const pw=(pv&&!pv.band&&pv.mat===cl.mat)?W[x.s-1]:0, nw=(nx&&!nx.band&&nx.mat===cl.mat)?W[x.s+1]:0; return (1+pw+nw)<=2; });
           if(noAlarga.length){ c.length=0; noAlarga.forEach(x=>c.push(x)); } let cand=repartir(cl.g,libres(conPref(cl.g,c))); if(temprano())cand=cand.slice().sort((A,B)=>A.s-B.s); const x=cand[0]; grid[cl.g][x.d][x.s]={mat:cl.mat,prof:cl.prof}; return true; };
         // Troncales (Lengua/Mates/Globalizada de tutoras multi-grupo): 1ª franja primero.
@@ -1882,14 +2128,14 @@ function mcSolve(rnd,deadline,capEsp){
         while(rem>=2){
           // troncales: 1ª hora. En grupos con especialidad a 1ª hora, antes que la última hora
           // se prueban los pares tempranos (10:00-11:00 / 11:00-12:00): justo detrás del especialista.
-          if(esTro){ if(cupoPrio>0){ if(put1hAt([0])||putPar()||put1hAt([6])){rem-=2;continue;} break; }
-                     if(put1hAt([0])||put1hAt([6])||putPar()){rem-=2;continue;} break; }
+          if(esTro){ if(cupoPrio>0){ if(put1hAt([0])||putPar()||put1hAt([S_ULT])){rem-=2;continue;} break; }
+                     if(put1hAt([0])||put1hAt([S_ULT])||putPar()){rem-=2;continue;} break; }
           if(prioAhora()){ if(put1hAt([0])){ prioUsed[cl.g]=(prioUsed[cl.g]||0)+1; rem-=2; continue; }
-                           if(putPar()||put1hAt([6])){rem-=2;continue;} break; }
+                           if(putPar()||put1hAt([S_ULT])){rem-=2;continue;} break; }
           // cupo de primeras horas ya gastado en este grupo: la 1ª franja deja de ser opción
           // para las especialidades (si no, el nº de días pedido se dispara).
-          if(cupoPrio>0){ if(put1hAt([6])||putPar()){rem-=2;continue;} break; }
-          if(put1hAt([6])||putPar()||put1hAt([0])){rem-=2;continue;} break;
+          if(cupoPrio>0){ if(put1hAt([S_ULT])||putPar()){rem-=2;continue;} break; }
+          if(put1hAt([S_ULT])||putPar()||put1hAt([0])){rem-=2;continue;} break;
         }
         while(rem>=1){ if(put30()){rem-=1;continue;} break; }
         sc+=rem;                                         // medias que no cupieron
@@ -1957,11 +2203,11 @@ function mcSolve(rnd,deadline,capEsp){
     const _prioG=espDias(g.id)>0;   // grupo con especialidades a 1ª hora algunos días
     slot0.forEach(c=>pick60(c,true)); slotN.forEach(c=>pick60(c,false,_prioG));
     // slots de 30: agrupar en PARES contiguos (bloques de 1h) por día; las medias impares aparte
-    const contig=(a,b)=>(b===a+1)&&!(a===4&&b===5); // 12:00→12:30 hay recreo: slot4 y slot5 no son contiguos
+    // En modo SESIONES cada tramo ya es una sesión completa: no hay que emparejar nada.
     const pares=[], medias=[];
     for(let d=0;d<ND;d++){
       const ls=libres30.filter(c=>c.d===d).map(c=>c.s).sort((a,b)=>a-b);
-      let i=0; while(i<ls.length){ if(i+1<ls.length && contig(ls[i],ls[i+1])){ pares.push([{d,s:ls[i]},{d,s:ls[i+1]}]); i+=2; } else { medias.push({d,s:ls[i]}); i++; } }
+      let i=0; while(i<ls.length){ if(!UNIFORME && i+1<ls.length && CT(ls[i],ls[i+1])){ pares.push([{d,s:ls[i]},{d,s:ls[i+1]}]); i+=2; } else { medias.push({d,s:ls[i]}); i++; } }
     }
     for(let k=pares.length-1;k>0;k--){const j=Math.floor(rnd()*(k+1));[pares[k],pares[j]]=[pares[j],pares[k]];}
     // en grupos con especialidad a 1ª hora, los pares se llenan de antes a después:
@@ -1998,11 +2244,11 @@ function mcSolve(rnd,deadline,capEsp){
       if(!pend.length)return; let idx=0;
       // juntar con la franja siguiente para formar 1,5 h SOLO si es troncal: en una especialidad,
       // 1,5 h seguidas (p. ej. E. Física de 10:30 a 12:00) es justo lo que hay que evitar.
-      if(cell.s===5){ const c6=grid[g.id][cell.d][6]; if(c6&&!c6.band&&TRONCAL(c6.mat)){ const k=pend.indexOf(c6.mat); if(k>=0&&cabeCap(g.id,cell.d,pend[k],1))idx=k; } }
+      if(cell.s===S_POST){ const c6=despues(g.id,cell.d,cell.s); if(c6&&!c6.band&&TRONCAL(c6.mat)){ const k=pend.indexOf(c6.mat); if(k>=0&&cabeCap(g.id,cell.d,pend[k],1))idx=k; } }
       // ¿colocar aquí esta materia crearía un bloque de más de 1 h de una especialidad?
       const alarga=m=>{ if(!ESP(m))return false;
-        const prev=(cell.s>0&&cell.s!==5)?grid[g.id][cell.d][cell.s-1]:null;
-        const next=(cell.s<NS-1&&cell.s!==4)?grid[g.id][cell.d][cell.s+1]:null;
+        const prev=antes(g.id,cell.d,cell.s);
+        const next=despues(g.id,cell.d,cell.s);
         const pw=(prev&&!prev.band&&prev.mat===m)?W[cell.s-1]:0;
         const nw=(next&&!next.band&&next.mat===m)?W[cell.s+1]:0;
         return (1+pw+nw)>2; };
@@ -2012,9 +2258,9 @@ function mcSolve(rnd,deadline,capEsp){
     });
   }
   // 3) MIN-CONFLICTS (resolver solapes) + PULIDO (agrupar en bloques, evitar 30 min sueltos)
-  function fragOf(g,d,s){ if(W[s]!==1)return 0; const c=grid[g][d][s]; if(!c||c.band)return 0;
-    const prev=(s>0&&s!==5)?grid[g][d][s-1]:null;        // slot5 NO es contiguo con slot4 (recreo en medio)
-    const next=(s<NS-1&&s!==4)?grid[g][d][s+1]:null;     // slot5 SÍ es contiguo con slot6 (12:30-14:00 = 1,5h)
+  function fragOf(g,d,s){ if(UNIFORME)return 0;   // con sesiones iguales, una sesión suelta no es un fragmento
+    if(W[s]!==1)return 0; const c=grid[g][d][s]; if(!c||c.band)return 0;
+    const prev=antes(g,d,s), next=despues(g,d,s);
     const okP=prev&&!prev.band&&prev.mat===c.mat, okN=next&&!next.band&&next.mat===c.mat;
     return (okP||okN)?0:1; }
   function hardCell(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0; let cost=0; const p=c.prof;
@@ -2026,38 +2272,39 @@ function mcSolve(rnd,deadline,capEsp){
     return cost; }
   // Medias horas seguidas de la MISMA materia a las que pertenece esta celda (respetando el corte del recreo).
   function runMed(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0;
-    const cont=(a,b)=>(b===a+1)&&!(a===4&&b===5);          // slot4 y slot5 no son contiguos: hay recreo en medio
+    const cont=(a,b)=>CT(a,b);
     let tot=W[s];
     for(let k=s-1;k>=0;k--){ if(!cont(k,k+1))break; const cc=grid[g][d][k]; if(!cc||cc.band||cc.mat!==c.mat)break; tot+=W[k]; }
     for(let k=s+1;k<NS;k++){ if(!cont(k-1,k))break; const cc=grid[g][d][k]; if(!cc||cc.band||cc.mat!==c.mat)break; tot+=W[k]; }
     return tot; }
   // Medias de materia troncal (Lengua/Mates/Globalizada) que tiene el grupo ese día.
   function medTroncalDia(g,d){ let n=0; for(let s=0;s<NS;s++){ const c=grid[g][d][s]; if(c&&!c.band&&TRONCAL(c.mat))n+=W[s]; } return n; }
-  function runsDe(g,d,mat){ let runs=0,prev=false; for(let s=0;s<NS;s++){ if(s===5)prev=false; const c=grid[g][d][s]; const is=c&&!c.band&&c.mat===mat; if(is&&!prev)runs++; prev=is; } return runs; }
-  function bloquesSemana(g,mat){ let b=0; for(let d=0;d<ND;d++){ let prev=false; for(let s=0;s<NS;s++){ if(s===5)prev=false; const c=grid[g][d][s]; const is=c&&!c.band&&c.mat===mat; if(is&&!prev)b++; prev=is; } } return b; }
+  function runsDe(g,d,mat){ let runs=0,prev=false; for(let s=0;s<NS;s++){ if(s>0&&!CT(s-1,s))prev=false; const c=grid[g][d][s]; const is=c&&!c.band&&c.mat===mat; if(is&&!prev)runs++; prev=is; } return runs; }
+  function bloquesSemana(g,mat){ let b=0; for(let d=0;d<ND;d++){ let prev=false; for(let s=0;s<NS;s++){ if(s>0&&!CT(s-1,s))prev=false; const c=grid[g][d][s]; const is=c&&!c.band&&c.mat===mat; if(is&&!prev)b++; prev=is; } } return b; }
   function softCell(g,d,s){ const c=grid[g][d][s]; if(!c||c.band)return 0; let so=0.3*fragOf(g,d,s);
     if(ESP(c.mat)){
       if(runsDe(g,d,c.mat)>1) so+=0.5;                                    // especialidad partida en el día
       const _rm=runMed(g,d,s);
-      if(_rm>2) so+=0.55;        // más de 1 h seguida de una especialidad (p. ej. 1,5 h de EF): partirla en dos días
-      if(_rm===1) so+=0.30;      // sesión suelta de 30 min: preferible juntarla en 1 h
+      if(_rm>(UNIFORME?1:2)) so+=0.55;   // más de una sesión seguida de la misma especialidad: partirla en dos días
+      if(!UNIFORME && _rm===1) so+=0.30;  // media hora suelta: preferible juntarla en 1 h
       if(medTroncalDia(g,d)===0) so+=0.70;   // día SIN ninguna troncal: el grupo pasaría la mañana entera con especialistas
       const M=state.horas[g]?.[c.mat]||0, maxB=Math.max(1,Math.floor(M/2)), b=bloquesSemana(g,c.mat);
       if(b>maxB) so+=0.5*(b-maxB);                                        // demasiados trozos en la semana
     }
-    if(c.mat==='CMED'){ if(s<=2)so+=0.45; else if(s>=5)so-=0.12; }  // Conocimiento: fuerte preferencia pegado al recreo (antes: 11-12 / después: 12:30-14), penaliza 1ª mitad de la mañana
-    if(s===5){ const c6=grid[g][d][6]; if(c6&&!c6.band&&c6.mat!==c.mat)so+=0.15; } // tarde 12:30-14 = bloque 1,5h
+    if(c.mat==='CMED'){ if(s<=S_POST-3)so+=0.45; else if(s>=S_POST)so-=0.12; }  // Conocimiento: pegado al recreo, penaliza la 1ª mitad de la mañana
+    if(s===S_POST){ const c6=despues(g,d,s); if(c6&&!c6.band&&c6.mat!==c.mat)so+=0.15; }
     // Materia partida en dos trozos el mismo día, y sobre todo el "sándwich"
     // (Mates · 30 min de otra cosa · Mates), que es lo que más chirría al leer el horario.
     if(c.mat!=='GLO'&&runsDe(g,d,c.mat)>1) so+=0.40;
-    { const pv=(s>0&&s!==5)?grid[g][d][s-1]:null, nx=(s<NS-1&&s!==4)?grid[g][d][s+1]:null;
+    { const pv=antes(g,d,s), nx=despues(g,d,s);
       if(pv&&nx&&!pv.band&&!nx.band&&pv.mat===nx.mat&&pv.mat!==c.mat) so+=0.60; }   // celda intrusa entre dos iguales
     if(c.mat==='LEN'||c.mat==='MAT'||c.mat==='GLO'){
       if(s!==0)so+=0.02;                              // troncales: preferir 1ª hora
       if(espDias(g)>0)so+=0.05*s;                     // con especialidad a 1ª hora: troncales lo más pegadas posible a ella, no al final
       if(c.mat==='MAT'&&s===0)so+=0.07;               // entre Lengua y Mates, LENGUA primero
       let cnt=0; for(let s2=0;s2<NS;s2++){const cc=grid[g][d][s2]; if(cc&&!cc.band&&cc.mat===c.mat)cnt+=W[s2];}
-      if(cnt>3)so+=0.25*(cnt-3); }                    // >1,5h de la misma troncal/día (favorece repartir)
+      const _capT=UNIFORME?2:3;
+      if(cnt>_capT)so+=0.25*(cnt-_capT); }            // demasiado de la misma troncal en un día (favorece repartir)
     return so; }
   function cellCost(g,d,s){ return hardCell(g,d,s)+softCell(g,d,s); }
   function hardList(){ let n=0,list=[]; GRUPOS.forEach(g=>{for(let d=0;d<ND;d++)for(let s=0;s<NS;s++){const cc=hardCell(g.id,d,s); if(cc>=1){n+=cc; list.push({g:g.id,d,s});}}}); return {n,list}; }
@@ -2151,11 +2398,11 @@ function mcSolve(rnd,deadline,capEsp){
     const rank=c=>!c||c.band?-1:(c.mat==='LEN'?3:c.mat==='GLO'?3:c.mat==='MAT'?2:0);
     for(const g of GRUPOS){ const gid=g.id;
       for(let d=0;d<ND;d++){
-        const c0=grid[gid][d][0], c6=grid[gid][d][6];
+        const c0=grid[gid][d][0], c6=grid[gid][d][S_ULT];
         if(!c0||!c6||c0.band||c6.band)continue;
-        if(W[0]!==W[6])continue;
+        if(W[0]!==W[S_ULT])continue;
         if(rank(c6)>rank(c0)){
-          const a={d,s:0},b={d,s:6};
+          const a={d,s:0},b={d,s:S_ULT};
           if(hardDelta(gid,a,b)<=0) doSwap(gid,a,b);
         }
       }
@@ -2338,7 +2585,7 @@ function conflictosResultado(){
 function bloquesSemanaRes(gid,mat){
   const NS=numTramos(); let b=0;
   for(let d=0;d<DIAS.length;d++){ let prev=false;
-    for(let s=0;s<NS;s++){ if(s===5)prev=false;
+    for(let s=0;s<NS;s++){ if(s>0&&!contigSlots(s-1,s))prev=false;
       const c=state.resultado[gid]?.[d]?.[s]; const is=c&&!c.band&&c.mat===mat;
       if(is&&!prev)b++; prev=is; } }
   return b;
@@ -2356,14 +2603,14 @@ function informeCalidad(){
     while(s<NS){ const c=state.resultado[g.id]?.[d]?.[s];
       if(!c||c.band||!_ESP(c.mat)){s++;continue;}
       let med=W[s],e=s+1;
-      while(e<NS){ const seg=(e===5&&s<=4); if(seg)break; const cc=state.resultado[g.id]?.[d]?.[e]; if(!cc||cc.band||cc.mat!==c.mat)break; med+=W[e]; e++; }
+      while(e<NS){ if(!contigSlots(e-1,e))break; const cc=state.resultado[g.id]?.[d]?.[e]; if(!cc||cc.band||cc.mat!==c.mat)break; med+=W[e]; e++; }
       if(med>2)espLargas++; s=e; } } });
   GRUPOS.forEach(g=>{ for(let d=0;d<ND;d++){
     const cnt={};
     for(let s=0;s<NS;s++){const c=state.resultado[g.id]?.[d]?.[s]; if(c&&!c.band&&c.mat!=='GLO')cnt[c.mat]=(cnt[c.mat]||0)+W[s];}
     Object.values(cnt).forEach(v=>{if(v>3)excesoDia++;});
     let run=0,mprev=null;
-    for(let s=0;s<NS;s++){ if(s===5){run=0;mprev=null;}
+    for(let s=0;s<NS;s++){ if(s>0&&!contigSlots(s-1,s)){run=0;mprev=null;}
       const c=state.resultado[g.id]?.[d]?.[s]; const m=(c&&!c.band&&c.mat!=='GLO')?c.mat:null;
       run=(m&&m===mprev)?run+W[s]:(m?W[s]:0); mprev=m;
       if(run>3){dosSeguidas++;run=0;} }
@@ -2505,6 +2752,7 @@ function drawCurrent(){
   if(mode==='grupo') bindSwap(id);
 }
 function cellHTML(cell,gid,d,s,editable){
+  if(cell && cell.bloq) return '<td class="cell recreo-row">R E C R E O</td>';
   if(!cell) return `<td class="cell empty" ${editable?`data-c="${gid}|${d}|${s}"`:''}>libre</td>`;
   const m=MAT[cell.mat];
   const bg=m?m.color:'#888';
@@ -2523,6 +2771,15 @@ function cellHTML(cell,gid,d,s,editable){
   const style=`background:${hexA(bg,.16)};color:#1f2937;border-left:4px solid ${bg}`;
   return `<td class="cell${lock?' lock':''}${conf?' conflict':''}" style="${style}" ${editable&&!lock?`data-c="${gid}|${d}|${s}"`:''} title="${conf?'⚠ CHOQUE: este maestro/a está en dos sitios a la vez o fuera de su disponibilidad. ':''}${m?m.full:''}">
     <div class="m">${main}</div><div class="p">${sub}</div></td>`;
+}
+// Etiqueta bajo la hora: "1 h", los minutos si la franja no es la estándar,
+// y de quién es el recreo cuando Infantil y Primaria lo tienen a horas distintas.
+function badgeFranja(r){
+  const ETL={INF:'Infantil',PRI:'Primaria'};
+  if(r.rec) return `<br><span style="font-weight:700;color:#9a3412;font-size:10px">Recreo ${ETL[r.rec]||r.rec}</span>`;
+  if(r.primera||r.ultima) return '<br><span style="font-weight:600;color:#9a3412">1 h</span>';
+  if(esSesiones()||r.dur<state.centro.dur) return `<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`;
+  return '';
 }
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;}
 // Celda de la PRIMERA HORA (9:00-10:00). Si las dos medias horas coinciden → una sola celda de 1h.
@@ -2559,7 +2816,7 @@ function gridComp(gid){
   html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${r.dur>=60?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':''}</td>`;
+    html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${badgeFranja(r)}</td>`;
     DIAS.forEach((d,di)=>{
       const s=r.i, c=res[di][s], esp=esEspComp(c);
       const sel=compSel&&compSel.gid===gid&&compSel.d===di&&compSel.s===s;
@@ -2622,7 +2879,7 @@ function gridGrupo(gid,editable){
   html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${r.ini}-${r.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const durBadge=(r.primera||r.ultima)?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'');
+    const durBadge=badgeFranja(r);
     html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${durBadge}</td>`;
     DIAS.forEach((d,di)=>{
       if(r.primera||r.ultima){ html+=celdaUnida(res,gid,di,r.i,r.i2,editable); }
@@ -2659,7 +2916,7 @@ function gridMaestro(mid){
   html+='<table class="tt"><thead><tr><th class="timecol">Hora</th>'+DIAS.map(d=>`<th>${DIAS_LARGO[d]}</th>`).join('')+'</tr></thead><tbody>';
   rows.forEach(r=>{
     if(r.type==='recreo'){html+=`<tr><td class="timecol">Recreo<br>${r.ini}-${r.fin}</td>${DIAS.map(()=>'<td class="cell recreo-row">R E C R E O</td>').join('')}</tr>`;return;}
-    const durBadge=(r.primera||r.ultima)?'<br><span style="font-weight:600;color:#9a3412">1 h</span>':(r.dur<state.centro.dur?`<br><span style="font-weight:600;color:#9a3412">${r.dur}′</span>`:'');
+    const durBadge=badgeFranja(r);
     html+=`<tr><td class="timecol">${r.ini}<br>${r.fin}${durBadge}</td>`;
     DIAS.forEach((d,di)=>{
       if(r.primera||r.ultima){
@@ -2714,13 +2971,13 @@ function trySwap(gid,a,b){
   if((ca&&ca.mat==='REL')||(cb&&cb.mat==='REL')){ toast('La banda de religión no se mueve a mano (rompería las disponibilidades).','warn'); return; }
   if(!movible(gid,ca,a.d,a.s)||!movible(gid,cb,b.d,b.s)){ toast('Las especialidades solo se pueden cambiar si su maestro/a es tutor/a de ese curso (salvo las celdas en choque, que sí se pueden mover).','warn'); return; }
   // Caso FUSIÓN: dos medias horas (30 min) de la MISMA materia (Lengua, Mates…) → unirlas en un bloque de 1 h
-  const contig0=(d1,s1,d2,s2)=>(d1===d2 && Math.abs(s1-s2)===1 && !(Math.min(s1,s2)===4&&Math.max(s1,s2)===5));
+  const contig0=(d1,s1,d2,s2)=>(d1===d2 && contigSlots(Math.min(s1,s2),Math.max(s1,s2)));
   function libreEnPos(prof,d,s){ if(!prof)return true; for(const g of GRUPOS){ if(g.id===gid)continue; const c=state.resultado[g.id][d][s]; if(!c)continue; if(c.prof===prof)return false; if(c.band&&(c.band.cat===prof||c.band.ev===prof||c.band.ae===prof))return false; } return true; }
   if(ca && cb && ca.mat===cb.mat && W[a.s]===1 && W[b.s]===1 && !contig0(a.d,a.s,b.d,b.s)){
     const tryJoin=(anchor, other)=>{
       for(const v of [anchor.s+1, anchor.s-1]){
         if(v<0||v>=W.length||W[v]!==1)continue;
-        if((anchor.s===4&&v===5)||(anchor.s===5&&v===4))continue;      // no cruzar el recreo
+        if(!contigSlots(Math.min(anchor.s,v),Math.max(anchor.s,v)))continue;   // no cruzar el recreo
         if(anchor.d===other.d && v===other.s)continue;
         const cV=res[anchor.d][v];
         if(cV && (cV.mat==='REL' || !movible(gid,cV)))continue;        // el vecino debe poder moverse
@@ -2745,7 +3002,7 @@ function trySwap(gid,a,b){
   const big = W[a.s]===2 ? a : b, small = W[a.s]===2 ? b : a;
   const cBig = res[big.d][big.s];
   // buscar el contiguo de 'small' con la misma materia (su pareja de bloque de 1h)
-  const contig=(x,y)=>(Math.abs(x-y)===1)&&!((Math.min(x,y)===4&&Math.max(x,y)===5)); // recreo entre slot4 y slot5
+  const contig=(x,y)=>contigSlots(Math.min(x,y),Math.max(x,y));
   const cSmall=res[small.d][small.s];
   let s2=-1;
   for(const cand of [small.s-1,small.s+1]){ if(cand<0||cand>=W.length)continue; if(W[cand]!==1||!contig(small.s,cand))continue; const cc=res[small.d][cand]; if(cc&&cSmall&&cc.mat===cSmall.mat&&cc.prof===cSmall.prof){ s2=cand; break; } }
@@ -2943,6 +3200,12 @@ function cargar(file){
   const fr=new FileReader();
   fr.onload=()=>{ try{ const data=JSON.parse(fr.result); if(!data.state)throw 0; state=data.state;
     if(!state.centro.lineas) state.centro.lineas={INF3:1,INF4:1,INF5:1,'1':1,'2':1,'3':1,'4':1,'5':1,'6':1};
+    // Compatibilidad con archivos guardados antes de los recreos por etapa / sesiones de 45
+    if(!state.centro.computo) state.centro.computo='horas';
+    if(state.centro.recEtapa===undefined) state.centro.recEtapa=false;
+    if(!state.centro.recIniINF) state.centro.recIniINF='11:30';
+    if(!state.centro.recFinINF) state.centro.recFinINF='12:00';
+    if(state.centro.computo==='horas' && ![30,60].includes(parseInt(state.centro.dur,10))) state.centro.dur=30;
     rebuildGrupos(); ensureGrupoData();
     // recalcular uid
     state.maestros.forEach(m=>{const n=parseInt((m.id||'m0').slice(1));if(n>=uid)uid=n+1;});
